@@ -38,6 +38,7 @@ import time
 import types
 import generation_functions
 from transformers.cache_utils import DynamicCache
+from log_utils import start_run_log, end_run_log
 
 
 # patch DynamicCache globally (HF >=4.42)
@@ -384,4 +385,16 @@ class Fast_dLLM_v2EvalHarness(LM):
 
 
 if __name__ == "__main__":
+    # get task/tag dynamically if passed from bash
+    task = os.environ.get("TASK_NAME", "gsm8k")
+    tag = os.environ.get("RUN_TAG", None)
+
+    # output_dir is always where lm-eval saves results
+    results_dir = os.path.join("results", f"{task}_{tag}_raw")
+
+    # start timer/log
+    run_info = start_run_log(task=task, tag=tag)
+    # run the evaluation
     cli_evaluate()
+    # store timing info
+    end_run_log(run_info, results_dir=results_dir)
