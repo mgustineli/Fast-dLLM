@@ -1,7 +1,12 @@
 from typing import Callable, Optional, Union
 import torch
 import types
-from transformers.utils import auto_docstring, logging
+from transformers import logging
+
+
+def auto_docstring(x):
+    return x
+
 
 # Constants for Fast_dLLM model
 FAST_DLLM_MASK_ID = 151665
@@ -223,7 +228,19 @@ class Fast_dLLM_QwenForCausalLM:
                 seq_len = seq_len[~finished_flag]
                 x_t = x_t[~finished_flag]
 
-                for layer_id in range(len(past_key_values)):
+                # for layer_id in range(len(past_key_values)):
+                #     past_key_values.key_cache[layer_id] = past_key_values.key_cache[
+                #         layer_id
+                #     ][~finished_flag]
+                #     past_key_values.value_cache[layer_id] = past_key_values.value_cache[
+                #         layer_id
+                #     ][~finished_flag]
+
+                # replace with this safer version:
+                num_layers = min(len(past_key_values.key_cache), len(past_key_values))
+                for layer_id in range(num_layers):
+                    if layer_id >= len(past_key_values.key_cache):
+                        break
                     past_key_values.key_cache[layer_id] = past_key_values.key_cache[
                         layer_id
                     ][~finished_flag]
