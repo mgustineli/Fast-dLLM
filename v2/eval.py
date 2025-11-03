@@ -21,21 +21,18 @@ This file is inspired by the code from https://github.com/ML-GSAI/SMDM
 
 import accelerate
 import torch
-import re
+import os, re, io, json, time, types
 from pathlib import Path
 import random
 import numpy as np
 import torch.nn.functional as F
 from datasets import Dataset
+import lm_eval
 from lm_eval.__main__ import cli_evaluate
 from lm_eval.api.model import LM
 from lm_eval.api.registry import register_model
 from tqdm import tqdm
-import os
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
-import json
-import time
-import types
 import generation_functions
 from transformers.cache_utils import DynamicCache
 from log_utils import start_run_log, end_run_log
@@ -376,10 +373,26 @@ class Fast_dLLM_v2EvalHarness(LM):
                 print("=" * 20, end="\n\n")
 
         end_time = time.time()
+        # if self.show_speed:
+        #     print(f"Total number of tokens generated: {num_tokens}")
+        #     print(f"Total time taken: {end_time - start_time} seconds")
+        #     print(f"Tokens per second: {num_tokens / (end_time - start_time)}")
+
+        # return output
+        metrics = {}
         if self.show_speed:
+            total_time = end_time - start_time
+            tokens_per_s = float(num_tokens) / total_time
+            metrics = {
+                "tokens_generated": int(num_tokens),
+                "total_time_s": total_time,
+                "tokens_per_s": tokens_per_s,
+            }
             print(f"Total number of tokens generated: {num_tokens}")
-            print(f"Total time taken: {end_time - start_time} seconds")
-            print(f"Tokens per second: {num_tokens / (end_time - start_time)}")
+            print(f"Total time taken: {total_time} seconds")
+            print(f"Tokens per second: {tokens_per_s}")
+        # store metrics for external access
+        self.last_metrics = metrics
 
         return output
 
@@ -394,7 +407,12 @@ if __name__ == "__main__":
 
     # start timer/log
     run_info = start_run_log(task=task, tag=tag)
+
     # run the evaluation
     cli_evaluate()
-    # store timing info
-    end_run_log(run_info, results_dir=results_dir)
+
+    # retrieve metrics directly from the model class
+    metrics = getattr(lm_eval.api.registry.get_model("fast_dllm_v2"), "last_metrics", {})
+    data = end_run_log(run_info, results_dir=results_dir, **metrics)
+    with open(run_info["path"], "w") as f:
+        json.dump(data, f, indent=2)

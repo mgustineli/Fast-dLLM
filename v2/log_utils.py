@@ -31,18 +31,21 @@ def extract_accuracy_from_results(results_dir):
         with open(latest_file, "r") as f:
             data = json.load(f)
 
-        # Navigate the nested GSM8K metrics (lm-eval structure)
         gsm8k_metrics = data.get("results", {}).get("gsm8k", {})
-        flexible = gsm8k_metrics.get("flexible-extract", {})
-        accuracy = flexible.get("exact_match", {}).get("value", None)
-        print(f"[LOG] Parsed accuracy from {os.path.basename(latest_file)}: {accuracy}")
-        return accuracy
+        for key, value in gsm8k_metrics.items():
+            if "flexible-extract" in key and key.startswith("exact_match"):
+                print(f"[LOG] Parsed accuracy from {os.path.basename(latest_file)}: {value}")
+                return value
+
+        print(f"[WARN] flexible-extract accuracy not found in {latest_file}")
+        return None
     except Exception as e:
         print(f"[WARN] Could not extract accuracy: {e}")
         return None
 
 
-def end_run_log(run_info, tokens_generated=None, results_dir=None):
+
+def end_run_log(run_info, tokens_generated=None, results_dir=None, **extra):
     """End timer, compute throughput, and optionally merge accuracy from results_dir."""
     t1 = time.time()
     duration = t1 - run_info["t0"]
@@ -62,6 +65,7 @@ def end_run_log(run_info, tokens_generated=None, results_dir=None):
         "tokens_generated": tokens_generated,
         "tokens_per_s": throughput,
         "accuracy_flexible": accuracy,
+        **extra,  # merge any new fields here
     }
 
     with open(run_info["path"], "w") as f:
