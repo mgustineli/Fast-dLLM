@@ -45,14 +45,21 @@ def extract_accuracy_from_results(results_dir):
 
 
 
-def end_run_log(run_info, tokens_generated=None, results_dir=None, **extra):
+def end_run_log(run_info, results_dir=None, **metrics):
     """End timer, compute throughput, and optionally merge accuracy from results_dir."""
     t1 = time.time()
     duration = t1 - run_info["t0"]
-    throughput = (
-        (tokens_generated / duration) if (tokens_generated and duration > 0) else None
-    )
 
+    # extract token-related metrics safely
+    tokens_generated = metrics.get("tokens_generated")
+    total_time_s = metrics.get("total_time_s", duration)
+    tokens_per_s = metrics.get("tokens_per_s")
+
+    # if not provided, compute throughput fallback
+    if tokens_generated is not None and (tokens_per_s is None or tokens_per_s == 0):
+        tokens_per_s = tokens_generated / total_time_s if total_time_s > 0 else None
+
+    # extract accuracy from results JSON
     accuracy = None
     if results_dir and os.path.exists(results_dir):
         accuracy = extract_accuracy_from_results(results_dir)
@@ -61,13 +68,17 @@ def end_run_log(run_info, tokens_generated=None, results_dir=None, **extra):
         "task": run_info["task"],
         "tag": run_info["tag"],
         "timestamp": run_info["timestamp"],
-        "total_time_s": duration,
+        "total_time_s": total_time_s,
         "tokens_generated": tokens_generated,
-        "tokens_per_s": throughput,
+        "tokens_per_s": tokens_per_s,
         "accuracy_flexible": accuracy,
-        **extra,  # merge any new fields here
     }
 
+    # Include any other custom fields that might exist in metrics
+    extra = {k: v for k, v in metrics.items() if k not in data}
+    data.update(extra)
+
+    # Save JSON
     with open(run_info["path"], "w") as f:
         json.dump(data, f, indent=2)
 

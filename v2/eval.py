@@ -30,7 +30,7 @@ from datasets import Dataset
 import lm_eval
 from lm_eval.__main__ import cli_evaluate
 from lm_eval.api.model import LM
-from lm_eval.api.registry import register_model
+from lm_eval.api.registry import register_model, MODEL_REGISTRY
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 import generation_functions
@@ -411,8 +411,15 @@ if __name__ == "__main__":
     # run the evaluation
     cli_evaluate()
 
+    # retrieve the most recent model instance created by lm_eval
+    model_instance = None
+    for model_name, model_cls in MODEL_REGISTRY.items():
+        if model_name == "fast_dllm_v2" and hasattr(model_cls, "last_metrics"):
+            model_instance = model_cls
+            break
+
     # retrieve metrics directly from the model class
-    metrics = getattr(lm_eval.api.registry.get_model("fast_dllm_v2"), "last_metrics", {})
+    metrics = getattr(model_instance, "last_metrics", {}) if model_instance else {}
     data = end_run_log(run_info, results_dir=results_dir, **metrics)
     with open(run_info["path"], "w") as f:
         json.dump(data, f, indent=2)
