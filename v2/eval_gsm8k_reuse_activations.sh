@@ -30,8 +30,12 @@ mkdir -p results
 # datetime for saving results
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
+# pass variables to eval.py for logging
+export RUN_TIMESTAMP=$TIMESTAMP
+
 # sweep over k = 1, 2, 3
-for subset in first middle last; do
+# for subset in first middle last; do
+for subset in first; do
     for K in 1 2 3; do
         TAG="reuse_${subset}_k${K}_limit${NUM_SAMPLES}"
 
