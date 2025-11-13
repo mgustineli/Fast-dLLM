@@ -165,13 +165,7 @@ class Fast_dLLM_QwenForCausalLM:
                                     == mask_id
                                 ).any()
                             )
-                            # DEBUG LOGGING
-                            gdbg(
-                                f"use_block_cache={use_block_cache} | small_block_loop start"
-                            )
-                            gdbg(
-                                f"should_recompute={should_recompute} | reuse_counter={reuse_counter} | small_block_idx={small_block_idx} | block_idx={block_idx}"
-                            )
+                            # if recompute:
                             if should_recompute:
                                 if block_past_key_values is None:
                                     # disable to avoid NoneType write
@@ -448,7 +442,6 @@ class Fast_dLLM_QwenForCausalLM:
             x_init = torch.cat([input_ids, x_init], dim=1)
 
             x_t = x_init.clone()
-            block_past_key_values = None
             step = 0
 
             while True:

@@ -1,6 +1,4 @@
-import os
 import types
-import inspect
 from typing import Dict, List, Optional
 
 
@@ -8,6 +6,7 @@ def _shape_of(x):
     """Return tensor shape as tuple if x is a torch.Tensor, else None."""
     try:
         import torch
+
         if isinstance(x, torch.Tensor):
             return tuple(x.shape)
     except Exception:
@@ -54,7 +53,9 @@ class LayerReuseController:
             reuse_k: number of steps between recomputations
         """
         # detect where the layer stack lives
-        if hasattr(model_with_layers, "model") and hasattr(model_with_layers.model, "layers"):
+        if hasattr(model_with_layers, "model") and hasattr(
+            model_with_layers.model, "layers"
+        ):
             self.layers = model_with_layers.model.layers
         else:
             self.layers = model_with_layers.layers
@@ -62,8 +63,8 @@ class LayerReuseController:
         self.reuse_k = max(int(reuse_k), 1)
         self.enabled = False
         self.counter = 0
-        self.cache: Dict[int, object] = {}         # stores cached layer outputs
-        self.orig_forwards: Dict[int, object] = {} # keeps original forward methods
+        self.cache: Dict[int, object] = {}  # stores cached layer outputs
+        self.orig_forwards: Dict[int, object] = {}  # keeps original forward methods
 
         n = len(self.layers)
         subset_size = min(12, n)
@@ -88,7 +89,9 @@ class LayerReuseController:
         - Skips reuse for stateful or sequence-length-changing calls
         - Otherwise calls the original forward method and stores the result
         """
-        is_bound = hasattr(orig_forward, "__self__") and orig_forward.__self__ is not None
+        is_bound = (
+            hasattr(orig_forward, "__self__") and orig_forward.__self__ is not None
+        )
 
         def wrapped(self_layer, *args, **kwargs):
             # extract sequence length (T)
@@ -99,11 +102,14 @@ class LayerReuseController:
             has_past = kwargs.get("past_key_value", None) is not None
             has_block_past = kwargs.get("block_past_key_values", None) is not None
             touches_positions = any(
-                k in kwargs for k in ("cache_position", "replace_position", "position_embeddings")
+                k in kwargs
+                for k in ("cache_position", "replace_position", "position_embeddings")
             )
 
             # skip reuse and caching for stateful calls
-            stateful = use_block_cache or has_past or has_block_past or touches_positions
+            stateful = (
+                use_block_cache or has_past or has_block_past or touches_positions
+            )
 
             # check if reuse is valid for this layer
             can_reuse = (
@@ -124,10 +130,19 @@ class LayerReuseController:
                 return self.cache[layer_idx]
 
             # otherwise, compute output normally
-            out = orig_forward(*args, **kwargs) if is_bound else orig_forward(self_layer, *args, **kwargs)
+            out = (
+                orig_forward(*args, **kwargs)
+                if is_bound
+                else orig_forward(self_layer, *args, **kwargs)
+            )
 
             # store output only if this was a non-stateful, same-length call
-            if self.enabled and (layer_idx in self.reuse_layers) and (not stateful) and same_len:
+            if (
+                self.enabled
+                and (layer_idx in self.reuse_layers)
+                and (not stateful)
+                and same_len
+            ):
                 self.cache[layer_idx] = out
                 self.cache[("meta", layer_idx)] = {"T": T_cur}
 
@@ -149,7 +164,9 @@ class LayerReuseController:
         for idx, layer in enumerate(self.layers):
             if idx in self.reuse_layers:
                 self.orig_forwards[idx] = layer.forward
-                layer.forward = types.MethodType(self._make_wrapper(idx, layer.forward), layer)
+                layer.forward = types.MethodType(
+                    self._make_wrapper(idx, layer.forward), layer
+                )
 
     def disable_reuse(self):
         """Restore original forward methods and clear the reuse cache."""
