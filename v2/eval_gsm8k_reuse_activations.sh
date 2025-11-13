@@ -34,8 +34,8 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 export RUN_TIMESTAMP=$TIMESTAMP
 
 # sweep over k = 1, 2, 3
-# for subset in first middle last; do
-for subset in first; do
+for subset in first middle last; do
+# for subset in first; do
     for K in 1 2 3; do
         TAG="reuse_${subset}_k${K}_limit${NUM_SAMPLES}"
 

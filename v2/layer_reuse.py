@@ -1,3 +1,4 @@
+import torch
 import types
 from typing import Dict, List, Optional
 
@@ -5,8 +6,6 @@ from typing import Dict, List, Optional
 def _shape_of(x):
     """Return tensor shape as tuple if x is a torch.Tensor, else None."""
     try:
-        import torch
-
         if isinstance(x, torch.Tensor):
             return tuple(x.shape)
     except Exception:
