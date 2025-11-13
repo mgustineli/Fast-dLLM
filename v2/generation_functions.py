@@ -1,4 +1,3 @@
-from typing import Callable, Optional, Union
 from layer_reuse import LayerReuseController
 import os
 import torch
