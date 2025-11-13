@@ -34,38 +34,34 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 export RUN_TIMESTAMP=$TIMESTAMP
 
 # sweep over k = 1, 2, 3
-for subset in first middle last; do
-# for subset in first; do
-    for K in 1 2 3; do
-        TAG="reuse_${subset}_k${K}_limit${NUM_SAMPLES}"
+for K in 1 2 3; do
+    TAG="reuse_k${K}_limit${NUM_SAMPLES}"
 
-        # pass variables to eval.py for logging
-        export TASK_NAME=$TASK
-        export RUN_TAG=$TAG
+    # pass variables to eval.py for logging
+    export TASK_NAME=$TASK
+    export RUN_TAG=$TAG
 
-        # deterministic results across subsets
-        export CUBLAS_WORKSPACE_CONFIG=":16:8"
-        export PYTHONHASHSEED=42
+    # deterministic results across subsets
+    export CUBLAS_WORKSPACE_CONFIG=":16:8"
+    export PYTHONHASHSEED=42
 
-        echo ""
-        echo "============================================================================="
-        echo "[INFO] Starting evaluation: $TASK | subset=${subset} | reuse_k=${K} | samples=${NUM_SAMPLES}"
-        echo "============================================================================="
+    echo ""
+    echo "============================================================================="
+    echo "[INFO] Starting evaluation: $TASK | subset=None | reuse_k=${K} | samples=${NUM_SAMPLES}"
+    echo "============================================================================="
 
-        accelerate launch eval.py \
-        --tasks gsm8k \
-        --model fast_dllm_v2 \
-        --batch_size 1 \
-        --num_fewshot 0 \
-        --confirm_run_unsafe_code \
-        --apply_chat_template \
-        --model_args "model_path=${MODEL_PATH},reuse_k=${K},layer_subset=${subset},use_block_cache=True,show_speed=True" \
-        ${LIMIT_ARG} \
-        --output_path results/${TIMESTAMP}/gsm8k_${TAG}_raw/
+    accelerate launch eval.py \
+    --tasks gsm8k \
+    --model fast_dllm_v2 \
+    --batch_size 1 \
+    --num_fewshot 0 \
+    --confirm_run_unsafe_code \
+    --apply_chat_template \
+    --model_args "model_path=${MODEL_PATH},reuse_k=${K},use_block_cache=True,show_speed=True" \
+    ${LIMIT_ARG} \
+    --output_path results/${TIMESTAMP}/gsm8k_${TAG}_raw/
 
-
-        echo "[INFO] Evaluation complete for reuse_k=${K}"
-    done
+    echo "[INFO] Evaluation complete for reuse_k=${K}"
 done
 
 echo ""
