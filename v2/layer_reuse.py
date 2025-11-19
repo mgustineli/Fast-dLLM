@@ -1,6 +1,6 @@
 import torch
 import types
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 
 def _shape_of(x):
@@ -36,19 +36,13 @@ class LayerReuseController:
     """
     This controller wraps a subset of decoder layers to reuse their outputs
     for (reuse_k - 1) forward passes and recompute them every kth pass.
-
-    Example:
-        reuse_k = 3  → reuse cached outputs for 2 steps, recompute on the 3rd.
-
-    The main motivation is to skip recomputation in attention-heavy layers
-    during iterative decoding, improving throughput while maintaining accuracy.
     """
 
-    def __init__(self, model_with_layers, subset: Optional[str], reuse_k: int):
+    def __init__(self, model_with_layers, subset: Optional[Union[str, List[int]]], reuse_k: int):
         """
         Args:
             model_with_layers: model exposing .layers or .model.layers
-            subset: which layers to reuse ("first", "middle", "last", or list of indices)
+            subset: which layers to reuse ("first", "middle", "last", list of indices, or None)
             reuse_k: number of steps between recomputations
         """
         # detect where the layer stack lives
@@ -70,7 +64,9 @@ class LayerReuseController:
 
         # select subset of layers to apply reuse on
         if subset is None:
-            self.reuse_layers: List[int] = []
+            # --- FIX 1: Default to ALL layers if None is passed ---
+            # This ensures that if you just want to test 'k', it applies to the whole model.
+            self.reuse_layers = list(range(n))
         elif subset == "first":
             self.reuse_layers = list(range(0, subset_size))
         elif subset == "middle":
@@ -83,10 +79,7 @@ class LayerReuseController:
 
     def _make_wrapper(self, layer_idx: int, orig_forward):
         """
-        Creates a wrapped version of the layer's forward method that:
-        - Reuses cached outputs if allowed
-        - Skips reuse for stateful or sequence-length-changing calls
-        - Otherwise calls the original forward method and stores the result
+        Creates a wrapped version of the layer's forward method.
         """
         is_bound = (
             hasattr(orig_forward, "__self__") and orig_forward.__self__ is not None
@@ -96,19 +89,22 @@ class LayerReuseController:
             # extract sequence length (T)
             T_cur = _get_seq_len_from_args(args, kwargs)
 
-            # detect whether this call involves stateful caching (e.g., KV-cache)
-            use_block_cache = bool(kwargs.get("use_block_cache", False))
-            has_past = kwargs.get("past_key_value", None) is not None
-            has_block_past = kwargs.get("block_past_key_values", None) is not None
-            touches_positions = any(
-                k in kwargs
-                for k in ("cache_position", "replace_position", "position_embeddings")
-            )
+            # --- FIX 2: Refine Stateful Logic ---
+            # We ONLY want to block reuse if we are modifying the GLOBAL past_key_values.
+            # We do NOT want to block reuse just because use_block_cache is True, 
+            # because that flag is active during the exact loop where we want reuse to happen.
+            
+            has_global_past = kwargs.get("past_key_value", None) is not None
+            
+            # Note: We ignore 'use_block_cache' and 'block_past_key_values' here.
+            # The generation loop handles the logic of when to flush the block cache.
+            # This controller's job is strictly layer-output reuse.
 
-            # skip reuse and caching for stateful calls
-            stateful = (
-                use_block_cache or has_past or has_block_past or touches_positions
-            )
+            # We also check if 'update_past_key_values' is explicitly True (usually prefill)
+            updating_past = kwargs.get("update_past_key_values", False)
+
+            # If we are strictly updating global state, we shouldn't reuse.
+            stateful = has_global_past and updating_past
 
             # check if reuse is valid for this layer
             can_reuse = (
@@ -119,10 +115,12 @@ class LayerReuseController:
                 and not stateful
             )
 
-            # guard against sequence length changes
+            # guard against sequence length changes (sanity check)
             meta = self.cache.get(("meta", layer_idx))
             last_T = meta.get("T") if isinstance(meta, dict) else None
-            same_len = (T_cur is None) or (last_T is None) or (T_cur == last_T)
+            
+            # If T_cur is None (couldn't detect), we assume it's unsafe to reuse unless we are sure
+            same_len = (T_cur is not None) and (last_T is not None) and (T_cur == last_T)
 
             # use cached output if safe and available
             if can_reuse and same_len and (layer_idx in self.cache):
@@ -135,13 +133,14 @@ class LayerReuseController:
                 else orig_forward(self_layer, *args, **kwargs)
             )
 
-            # store output only if this was a non-stateful, same-length call
+            # store output:
+            # We store it if enabled, inside the subset, and we are NOT in a stateful global update.
             if (
                 self.enabled
                 and (layer_idx in self.reuse_layers)
                 and (not stateful)
-                and same_len
             ):
+                # We allow caching even if T changes, we just overwrite the old one.
                 self.cache[layer_idx] = out
                 self.cache[("meta", layer_idx)] = {"T": T_cur}
 
@@ -182,12 +181,16 @@ class LayerReuseController:
     def step(self):
         """
         Should be called once after each decoding step.
-
-        Increments the reuse counter, and clears the cache every reuse_k steps
-        to ensure layers are periodically recomputed for correctness.
         """
         if not self.enabled:
             return
         self.counter += 1
+        # We do NOT clear the cache here anymore.
+        # Why? Because we might want to reuse the cache for k steps.
+        # If we clear it, we force a recompute next step regardless of 'k'.
+        # We only need to clear if the sequence length changes drastically or context shifts,
+        # but the _make_wrapper logic handles overwrites.
+        
+        # However, if you want to enforce a hard flush every k steps to be safe:
         if self.counter % self.reuse_k == 0:
             self.cache.clear()

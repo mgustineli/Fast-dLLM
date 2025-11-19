@@ -38,10 +38,12 @@ class Fast_dLLM_QwenForCausalLM:
         num_blocks = max_new_tokens // block_size + seq_len.max().item() // block_size
         batch_size = input_ids.shape[0]
 
-        # Layer reuse controller
-        # (patch subset of layers to reuse activations every k steps)
+        # --- Logic to Initialize Controller ---
+        # Initialize controller if a subset is provided OR if reuse_k > 1.
+        # If layer_subset is None but reuse_k > 1, we assume we want to reuse on ALL layers 
+        # (or whatever default your LayerReuseController handles for subset=None).
         controller = None
-        if layer_subset is not None:
+        if layer_subset is not None or reuse_k > 1:
             controller = LayerReuseController(
                 self.model, subset=layer_subset, reuse_k=reuse_k
             )
@@ -92,6 +94,7 @@ class Fast_dLLM_QwenForCausalLM:
             step = 0
             block_past_key_values = None
 
+            # --- First Pass Loop (Initial Block Prediction) ---
             while True:
                 mask_idx = x_t[:, -block_size:] == mask_id
                 if mask_idx.sum() == 0:
@@ -121,12 +124,17 @@ class Fast_dLLM_QwenForCausalLM:
                     next_token[finished_flag] = tokenizer.pad_token_id
                     x_t = torch.cat([x_t, next_token], dim=1)
                     step += 1
+                    
+                    # Step the controller if active
                     if controller is not None:
                         controller.step()
                     break
 
+                # --- SMALL BLOCK LOOP ---
+                # Reset reuse step at the start of small block processing
+                reuse_step = 0 
+                
                 for small_block_idx in range(num_small_blocks):
-                    reuse_counter = 0  # reset per small-block
                     small_block_start_idx = small_block_idx * small_block_size
                     small_block_end_idx = small_block_start_idx + small_block_size
 
@@ -143,24 +151,21 @@ class Fast_dLLM_QwenForCausalLM:
 
                         # --- REUSE BLOCK CACHE ACTIVATIONS ---
                         if use_block_cache:
-                            # decide whether to recompute or reuse cached block activations
+                            # Determine if we need to run a full computation or if we can reuse
+                            # 1. Must recompute if no cache exists
+                            # 2. Must recompute if k=1 (always)
+                            # 3. Must recompute on specific mod steps (0, k, 2k...)
+                            # 4. Must recompute if current position contains masks (safety check)
+                            
                             should_recompute = (
                                 block_past_key_values is None
-                                or reuse_k <= 1  # always refresh if k==1
-                                or (
-                                    reuse_counter % reuse_k == 0
-                                )  # every k-th step refresh
-                                or (
-                                    x_t[:, -block_size + small_block_start_idx]
-                                    == mask_id
-                                ).any()
+                                or reuse_k <= 1
+                                or (reuse_step % reuse_k == 0)
+                                or (x_t[:, -block_size + small_block_start_idx] == mask_id).any()
                             )
-                            # if recompute:
+
                             if should_recompute:
-                                if block_past_key_values is None:
-                                    # disable to avoid NoneType write
-                                    use_block_cache = False
-                                # recompute activations (block cache)
+                                # Full Compute
                                 output = self.forward(
                                     input_ids=x_t[:, -block_size:],
                                     use_cache=True,
@@ -176,8 +181,9 @@ class Fast_dLLM_QwenForCausalLM:
                                     [logits[:, :1, :], logits[:, :-1, :]], dim=1
                                 )
                                 logits = logits[:, start:end]
-                            # else: reuse previous activations
                             else:
+                                # Reuse Compute (Fast Path)
+                                # This path relies on block_past_key_values AND patched layers (via controller)
                                 logits = self.forward(
                                     input_ids=x_t[:, start:end],
                                     use_cache=True,
@@ -190,10 +196,12 @@ class Fast_dLLM_QwenForCausalLM:
                                 logits = torch.cat(
                                     [logits[:, :1, :], logits[:, :-1, :]], dim=1
                                 )
-                            # update reuse counter
-                            reuse_counter += 1
+                            
+                            # Increment the step counter for this small block sequence
+                            reuse_step += 1
 
                         else:
+                            # Standard path without block cache
                             logits = self.forward(
                                 input_ids=x_t[:, -block_size:],
                                 use_cache=True,
@@ -204,6 +212,7 @@ class Fast_dLLM_QwenForCausalLM:
                                 [logits[:, :1, :], logits[:, :-1, :]], dim=1
                             )
                             logits = logits[:, start:end]
+                        # --- END REUSE BLOCK CACHE ACTIVATIONS ---
 
                         # sampling and unmasking
                         x_1, p_1t = self.sample_with_top_p(
@@ -224,7 +233,8 @@ class Fast_dLLM_QwenForCausalLM:
                         )  # shape: [B]
                         finished_flag = finished_flag | finished_row_flags
                         step += 1
-                        # --- END REUSE BLOCK CACHE ACTIVATIONS ---
+
+                        # Step the layer reuse controller
                         if controller is not None:
                             controller.step()
             # --- END SMALL BLOCK LOOP ---
@@ -246,58 +256,26 @@ class Fast_dLLM_QwenForCausalLM:
                         ]
             seq_block_idx[seq_block_idx == block_idx] = block_idx + 1
 
-            # if finished_flag.any():
-            #     for sample_idx in range(x_t.shape[0]):
-            #         if finished_flag[sample_idx]:
-            #             original_idx = sample_indices[sample_idx].item()
-            #             finished_samples[original_idx] = (
-            #                 x_t[sample_idx : sample_idx + 1].clone().squeeze(dim=0)
-            #             )
-            #     sample_indices = sample_indices[~finished_flag]
-            #     input_ids = input_ids[~finished_flag]
-            #     seq_block_idx = seq_block_idx[~finished_flag]
-            #     seq_len = seq_len[~finished_flag]
-            #     x_t = x_t[~finished_flag]
-
-            #     num_layers = min(len(past_key_values.key_cache), len(past_key_values))
-            #     for layer_id in range(num_layers):
-            #         if layer_id >= len(past_key_values.key_cache):
-            #             break
-            #         past_key_values.key_cache[layer_id] = past_key_values.key_cache[
-            #             layer_id
-            #         ][~finished_flag]
-            #         past_key_values.value_cache[layer_id] = past_key_values.value_cache[
-            #             layer_id
-            #         ][~finished_flag]
-            #     finished_flag = finished_flag[~finished_flag]
-
             if not finished_flag.any():
                 continue  # nothing to trim, go to next block
 
             # --- TRIM KV CACHE ---
-            # Compute a keep mask ONCE and use it everywhere
             keep = ~finished_flag
             if keep.sum() == 0:
-                # All finished; nothing to trim
                 pass
             else:
-                # Trim past_key_values if present
                 if past_key_values is not None:
-                    # Case A: key_cache / value_cache lists (common in HF cache utils)
                     if hasattr(past_key_values, "key_cache") and hasattr(
                         past_key_values, "value_cache"
                     ):
                         L = len(past_key_values.key_cache)
                         for layer_id in range(L):
-                            # Each tensor is shaped [B, ...]; apply batch mask
                             past_key_values.key_cache[layer_id] = (
                                 past_key_values.key_cache[layer_id][keep]
                             )
                             past_key_values.value_cache[layer_id] = (
                                 past_key_values.value_cache[layer_id][keep]
                             )
-
-                    # Case B: nested caches list (e.g., past_key_values.caches[i].k_cache / v_cache)
                     elif hasattr(past_key_values, "caches"):
                         for layer_cache in past_key_values.caches:
                             if hasattr(layer_cache, "k_cache") and hasattr(
@@ -305,12 +283,10 @@ class Fast_dLLM_QwenForCausalLM:
                             ):
                                 layer_cache.k_cache = layer_cache.k_cache[keep]
                                 layer_cache.v_cache = layer_cache.v_cache[keep]
-                            # Some impls store kv as tuple/list
                             elif hasattr(layer_cache, "kv_cache"):
                                 k, v = layer_cache.kv_cache
                                 layer_cache.kv_cache = (k[keep], v[keep])
 
-                    # (Optional) Case C: block-level cache from use_block_cache
                     if (
                         "block_past_key_values" in locals()
                         and block_past_key_values is not None
@@ -337,7 +313,6 @@ class Fast_dLLM_QwenForCausalLM:
                                     k, v = layer_cache.kv_cache
                                     layer_cache.kv_cache = (k[keep], v[keep])
 
-                # now shrink all batch-shaped runtime buffers with the SAME keep mask
                 sample_indices = sample_indices[keep]
                 input_ids = input_ids[keep]
                 seq_block_idx = seq_block_idx[keep]
