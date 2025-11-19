@@ -1,4 +1,3 @@
-from layer_reuse import LayerReuseController
 import torch
 import types
 
@@ -12,6 +11,122 @@ TOKEN_COLOR = -0.5
 
 def auto_docstring(x):
     return x
+
+
+# --- HELPER FUNCTIONS (Define these OUTSIDE the class) ---
+def _patch_layers_helper(model, reuse_k, subset_name, reuse_state):
+    """
+    Replaces the .forward() method of specific layers with a wrapper
+    that caches outputs and skips computation based on reuse_state.
+    """
+    if not subset_name or reuse_k <= 1:
+        return {}
+
+    # 1. Identify Target Layers
+    layers = model.layers
+    n = len(layers)
+    subset_size = 12
+    target_indices = []
+
+    if subset_name == "first":
+        # IMPORTANT: Skip Layer 0. It allocates memory for the cache.
+        target_indices = list(range(1, min(n, subset_size)))
+    elif subset_name == "middle":
+        start = max(0, n // 2 - subset_size // 2)
+        target_indices = list(range(start, start + subset_size))
+    elif subset_name == "last":
+        target_indices = list(range(n - subset_size, n))
+
+    original_forwards = {}
+
+    # 2. Define the Wrapper Function (The Closure)
+    def create_wrapper(original_forward, layer_idx):
+        # Local cache for this specific layer
+        layer_cache = {}
+
+        def wrapper(self_layer, *args, **kwargs):
+            # If reuse is globally disabled, run normal
+            if not reuse_state["enabled"]:
+                return original_forward(*args, **kwargs)
+
+            step = reuse_state["count"]
+
+            # LOGIC:
+            # 1. If mod k == 0: Recompute & Cache
+            # 2. If mod k != 0: Reuse Cache
+            should_recompute = step % reuse_k == 0
+
+            if kwargs.get("update_past_key_values", False):
+                should_recompute = True
+
+            if should_recompute:
+                output = original_forward(*args, **kwargs)
+                # Cache the output (Hidden States are usually the first element if tuple, or just the tensor)
+                # Transformers usually return (hidden_states, present_key_values, ...)
+                # We only cache the tensor part if it's a tuple, or the tensor itself.
+                if isinstance(output, tuple):
+                    layer_cache["last_output"] = output[0]
+                else:
+                    layer_cache["last_output"] = output
+                return output
+            else:
+                # Reuse Step!
+                if "last_output" in layer_cache:
+                    cached_tensor = layer_cache["last_output"]
+
+                    # --- FIX: SLICING LOGIC ---
+                    # The next layer expects input of shape [B, current_seq_len, D].
+                    # Our cached tensor is [B, full_block_size, D].
+                    # We must slice the cache to match the current request.
+
+                    current_input = args[0]  # The hidden states passed to this layer
+                    current_len = current_input.shape[1]
+
+                    if cached_tensor.shape[1] == current_len:
+                        # Shapes match (rare in block decoding), return as is
+                        output_tensor = cached_tensor
+                    else:
+                        # Shapes mismatch. Use replace_position to find the correct slice.
+                        # replace_position indicates where in the block we are currently writing.
+                        replace_pos = kwargs.get("replace_position", 0)
+
+                        # Safety Check: Ensure slice is within bounds
+                        if replace_pos + current_len <= cached_tensor.shape[1]:
+                            output_tensor = cached_tensor[
+                                :, replace_pos : replace_pos + current_len, :
+                            ]
+                        else:
+                            # If we can't slice correctly, we must fallback to recompute to avoid crash
+                            return original_forward(*args, **kwargs)
+
+                    # Re-wrap in tuple if the original output was a tuple
+                    # (Most HF models return tuple, but standard usage often just takes [0])
+                    return (
+                        (output_tensor,)
+                        if isinstance(original_forward(*args, **kwargs), tuple)
+                        else output_tensor
+                    )
+
+                else:
+                    return original_forward(*args, **kwargs)
+
+        return wrapper
+
+    # 3. Apply the Monkey Patch
+    for idx in target_indices:
+        original_forwards[idx] = layers[idx].forward
+        layers[idx].forward = types.MethodType(
+            create_wrapper(layers[idx].forward, idx), layers[idx]
+        )
+
+    return original_forwards
+
+
+def _unpatch_layers_helper(model, original_forwards):
+    """Restores the original .forward() methods."""
+    layers = model.layers
+    for idx, orig_func in original_forwards.items():
+        layers[idx].forward = orig_func
 
 
 @auto_docstring
@@ -38,16 +153,15 @@ class Fast_dLLM_QwenForCausalLM:
         num_blocks = max_new_tokens // block_size + seq_len.max().item() // block_size
         batch_size = input_ids.shape[0]
 
-        # --- Logic to Initialize Controller ---
-        # Initialize controller if a subset is provided OR if reuse_k > 1.
-        # If layer_subset is None but reuse_k > 1, we assume we want to reuse on ALL layers 
-        # (or whatever default your LayerReuseController handles for subset=None).
-        controller = None
-        if layer_subset is not None or reuse_k > 1:
-            controller = LayerReuseController(
-                self.model, subset=layer_subset, reuse_k=reuse_k
-            )
-            controller.enable_reuse()
+        # --- SETUP LAYER REUSE ---
+        # reuse_state is a mutable dictionary shared between the loop and the layers
+        reuse_state = {"count": 0, "enabled": False}
+
+        # Apply the patches (Call the global helper function)
+        original_forwards = _patch_layers_helper(
+            self.model, reuse_k, layer_subset, reuse_state
+        )
+        # -------------------------
 
         if min_len > block_size:
             output = self.forward(
@@ -70,8 +184,10 @@ class Fast_dLLM_QwenForCausalLM:
 
         seq_block_idx = seq_len // block_size
         finished_flag = torch.zeros((batch_size), device=self.device, dtype=torch.bool)
+
         start_block_idx = min_len // block_size
         num_small_blocks = block_size // small_block_size
+
         sample_indices = torch.arange(batch_size, device=self.device)
         finished_samples = {}
 
@@ -112,6 +228,9 @@ class Fast_dLLM_QwenForCausalLM:
                     if finished_flag.all():
                         break
 
+                    # Disable reuse for prefill/correction steps
+                    reuse_state["enabled"] = False
+
                     output = self.forward(
                         input_ids=x_t[:, -block_size:],
                         use_cache=True,
@@ -124,16 +243,14 @@ class Fast_dLLM_QwenForCausalLM:
                     next_token[finished_flag] = tokenizer.pad_token_id
                     x_t = torch.cat([x_t, next_token], dim=1)
                     step += 1
-                    
-                    # Step the controller if active
-                    if controller is not None:
-                        controller.step()
                     break
 
                 # --- SMALL BLOCK LOOP ---
                 # Reset reuse step at the start of small block processing
-                reuse_step = 0 
-                
+                reuse_step = 0
+                # Enable reuse for the speculative generation loop
+                reuse_state["enabled"] = True
+
                 for small_block_idx in range(num_small_blocks):
                     small_block_start_idx = small_block_idx * small_block_size
                     small_block_end_idx = small_block_start_idx + small_block_size
@@ -151,17 +268,23 @@ class Fast_dLLM_QwenForCausalLM:
 
                         # --- REUSE BLOCK CACHE ACTIVATIONS ---
                         if use_block_cache:
+                            # SYNC THE LAYERS WITH THE CURRENT STEP
+                            reuse_state["count"] = reuse_step
+
                             # Determine if we need to run a full computation or if we can reuse
                             # 1. Must recompute if no cache exists
                             # 2. Must recompute if k=1 (always)
                             # 3. Must recompute on specific mod steps (0, k, 2k...)
                             # 4. Must recompute if current position contains masks (safety check)
-                            
+
                             should_recompute = (
                                 block_past_key_values is None
                                 or reuse_k <= 1
                                 or (reuse_step % reuse_k == 0)
-                                or (x_t[:, -block_size + small_block_start_idx] == mask_id).any()
+                                or (
+                                    x_t[:, -block_size + small_block_start_idx]
+                                    == mask_id
+                                ).any()
                             )
 
                             if should_recompute:
@@ -172,6 +295,7 @@ class Fast_dLLM_QwenForCausalLM:
                                     past_key_values=past_key_values,
                                     update_past_key_values=False,
                                     use_block_cache=True,
+                                    block_size=block_size,
                                 )
                                 logits, block_past_key_values = (
                                     output.logits,
@@ -192,15 +316,18 @@ class Fast_dLLM_QwenForCausalLM:
                                     use_block_cache=True,
                                     block_past_key_values=block_past_key_values,
                                     replace_position=small_block_start_idx,
+                                    block_size=block_size,
                                 ).logits
                                 logits = torch.cat(
                                     [logits[:, :1, :], logits[:, :-1, :]], dim=1
                                 )
-                            
                             # Increment the step counter for this small block sequence
                             reuse_step += 1
+                            # --- REUSE LOGIC END ---
 
                         else:
+                            # Disable layer reuse if block cache is off
+                            reuse_state["enabled"] = False
                             # Standard path without block cache
                             logits = self.forward(
                                 input_ids=x_t[:, -block_size:],
@@ -233,10 +360,6 @@ class Fast_dLLM_QwenForCausalLM:
                         )  # shape: [B]
                         finished_flag = finished_flag | finished_row_flags
                         step += 1
-
-                        # Step the layer reuse controller
-                        if controller is not None:
-                            controller.step()
             # --- END SMALL BLOCK LOOP ---
 
             if input_ids.shape[1] == x_t.shape[1]:
@@ -256,70 +379,57 @@ class Fast_dLLM_QwenForCausalLM:
                         ]
             seq_block_idx[seq_block_idx == block_idx] = block_idx + 1
 
-            if not finished_flag.any():
-                continue  # nothing to trim, go to next block
+            # --- Trim Logic ---
+            # This handles cases where len(past_key_values) != len(key_cache)
+            if finished_flag.any():
+                # 1. SAVE FINISHED SAMPLES
+                for sample_idx in range(x_t.shape[0]):
+                    if finished_flag[sample_idx]:
+                        original_idx = sample_indices[sample_idx].item()
+                        finished_samples[original_idx] = (
+                            x_t[sample_idx : sample_idx + 1].clone().squeeze(dim=0)
+                        )
 
-            # --- TRIM KV CACHE ---
-            keep = ~finished_flag
-            if keep.sum() == 0:
-                pass
-            else:
+                # 2. TRIM TENSORS
+                sample_indices = sample_indices[~finished_flag]
+                input_ids = input_ids[~finished_flag]
+                seq_block_idx = seq_block_idx[~finished_flag]
+                seq_len = seq_len[~finished_flag]
+                x_t = x_t[~finished_flag]
+
+                # 3. TRIM KV CACHE
                 if past_key_values is not None:
+                    # Case 1: Has explicit list attributes
                     if hasattr(past_key_values, "key_cache") and hasattr(
                         past_key_values, "value_cache"
                     ):
                         L = len(past_key_values.key_cache)
                         for layer_id in range(L):
                             past_key_values.key_cache[layer_id] = (
-                                past_key_values.key_cache[layer_id][keep]
+                                past_key_values.key_cache[layer_id][~finished_flag]
                             )
                             past_key_values.value_cache[layer_id] = (
-                                past_key_values.value_cache[layer_id][keep]
+                                past_key_values.value_cache[layer_id][~finished_flag]
                             )
+                    # Case 2: Has 'caches' list
                     elif hasattr(past_key_values, "caches"):
                         for layer_cache in past_key_values.caches:
-                            if hasattr(layer_cache, "k_cache") and hasattr(
-                                layer_cache, "v_cache"
-                            ):
-                                layer_cache.k_cache = layer_cache.k_cache[keep]
-                                layer_cache.v_cache = layer_cache.v_cache[keep]
+                            if hasattr(layer_cache, "k_cache"):
+                                layer_cache.k_cache = layer_cache.k_cache[
+                                    ~finished_flag
+                                ]
+                                layer_cache.v_cache = layer_cache.v_cache[
+                                    ~finished_flag
+                                ]
                             elif hasattr(layer_cache, "kv_cache"):
                                 k, v = layer_cache.kv_cache
-                                layer_cache.kv_cache = (k[keep], v[keep])
-
-                    if (
-                        "block_past_key_values" in locals()
-                        and block_past_key_values is not None
-                    ):
-                        if hasattr(block_past_key_values, "key_cache") and hasattr(
-                            block_past_key_values, "value_cache"
-                        ):
-                            Lb = len(block_past_key_values.key_cache)
-                            for layer_id in range(Lb):
-                                block_past_key_values.key_cache[layer_id] = (
-                                    block_past_key_values.key_cache[layer_id][keep]
+                                layer_cache.kv_cache = (
+                                    k[~finished_flag],
+                                    v[~finished_flag],
                                 )
-                                block_past_key_values.value_cache[layer_id] = (
-                                    block_past_key_values.value_cache[layer_id][keep]
-                                )
-                        elif hasattr(block_past_key_values, "caches"):
-                            for layer_cache in block_past_key_values.caches:
-                                if hasattr(layer_cache, "k_cache") and hasattr(
-                                    layer_cache, "v_cache"
-                                ):
-                                    layer_cache.k_cache = layer_cache.k_cache[keep]
-                                    layer_cache.v_cache = layer_cache.v_cache[keep]
-                                elif hasattr(layer_cache, "kv_cache"):
-                                    k, v = layer_cache.kv_cache
-                                    layer_cache.kv_cache = (k[keep], v[keep])
 
-                sample_indices = sample_indices[keep]
-                input_ids = input_ids[keep]
-                seq_block_idx = seq_block_idx[keep]
-                seq_len = seq_len[keep]
-                x_t = x_t[keep]
-                finished_flag = finished_flag[keep]
-            # --- END TRIM ---
+                # 4. UPDATE FLAG
+                finished_flag = finished_flag[~finished_flag]
 
         # add not finished samples since max_new_tokens is reached
         if len(finished_samples) < batch_size:
@@ -329,9 +439,9 @@ class Fast_dLLM_QwenForCausalLM:
                     x_t[sample_idx : sample_idx + 1].clone().squeeze(dim=0)
                 )
 
-        # --- restore model state ---
-        if controller is not None:
-            controller.disable_reuse()
+        # --- TEARDOWN LAYER REUSE ---
+        _unpatch_layers_helper(self.model, original_forwards)
+        # ----------------------------
 
         assert len(finished_samples) == batch_size
         return finished_samples
