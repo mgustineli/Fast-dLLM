@@ -397,9 +397,29 @@ class Fast_dLLM_QwenForCausalLM:
                 seq_len = seq_len[~finished_flag]
                 x_t = x_t[~finished_flag]
 
+                # --- TRIM LOCAL LAYER CACHES ---
+                if "caches" in reuse_state:
+                    for layer_id, layer_cache in reuse_state["caches"].items():
+                        if "last_output" in layer_cache:
+                            # cached_tensor shape: [Batch, Seq, Dim]
+                            # We filter along dim 0 (Batch) using ~finished_flag
+                            layer_cache["last_output"] = layer_cache["last_output"][
+                                ~finished_flag
+                            ]
+
                 # 3. TRIM KV CACHE
                 if past_key_values is not None:
-                    # Case 1: Has explicit list attributes
+                    # Case A: Standard Tuple of Tuples (Legacy HF)
+                    # This was missing and caused crash
+                    if isinstance(past_key_values, (tuple, list)):
+                        new_past = []
+                        for layer_past in past_key_values:
+                            k, v = layer_past
+                            new_k = k[~finished_flag]
+                            new_v = v[~finished_flag]
+                            new_past.append((new_k, new_v))
+                        past_key_values = type(past_key_values)(new_past)
+                    # Case B: DynamicCache (list of key_cache tensors)
                     if hasattr(past_key_values, "key_cache") and hasattr(
                         past_key_values, "value_cache"
                     ):
@@ -411,7 +431,7 @@ class Fast_dLLM_QwenForCausalLM:
                             past_key_values.value_cache[layer_id] = (
                                 past_key_values.value_cache[layer_id][~finished_flag]
                             )
-                    # Case 2: Has 'caches' list
+                    # Case C: Caches list (some modern HF models)
                     elif hasattr(past_key_values, "caches"):
                         for layer_cache in past_key_values.caches:
                             if hasattr(layer_cache, "k_cache"):
@@ -431,7 +451,6 @@ class Fast_dLLM_QwenForCausalLM:
                 # 4. UPDATE FLAG
                 finished_flag = finished_flag[~finished_flag]
 
-        # add not finished samples since max_new_tokens is reached
         if len(finished_samples) < batch_size:
             for sample_idx in range(x_t.shape[0]):
                 original_idx = sample_indices[sample_idx].item()
