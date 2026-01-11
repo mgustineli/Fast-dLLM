@@ -55,8 +55,6 @@ for K in 1 2 3; do
     --model fast_dllm_v2 \
     --batch_size 1 \
     --num_fewshot 0 \
-    --confirm_run_unsafe_code \
-    --apply_chat_template \
     --model_args "model_path=${MODEL_PATH},reuse_k=${K},use_block_cache=True,show_speed=True" \
     ${LIMIT_ARG} \
     --output_path results/${TIMESTAMP}/gsm8k_${TAG}_raw/
