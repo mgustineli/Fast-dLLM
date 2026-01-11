@@ -46,10 +46,7 @@ accelerate launch eval.py \
 --batch_size 1 \
 --num_fewshot 0 \
 ${LIMIT_ARG} \
---confirm_run_unsafe_code \
 --model fast_dllm_v2 \
---fewshot_as_multiturn \
---apply_chat_template \
 --model_args model_path=${MODEL_PATH},threshold=1,show_speed=True \
 --output_path results/${TIMESTAMP}/${TASK}_${TAG}_raw/
 
