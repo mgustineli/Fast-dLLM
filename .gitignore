@@ -16,6 +16,7 @@ env/
 
 # Project outputs and results
 results/
+logs/
 llada/output/
 llada/evals_results/
 dream/evals_results/
