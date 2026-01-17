@@ -98,12 +98,13 @@ fi
 echo "============================================================================="
 
 # Task configurations: task_name|batch_size|num_fewshot|extra_args
+# Note: batch_size=1 for generation tasks to avoid KV cache dimension issues
 declare -A TASK_CONFIGS=(
     ["mmlu"]="1|5|--fewshot_as_multiturn"
     ["gpqa_main_n_shot"]="1|0|--fewshot_as_multiturn"
-    ["gsm8k"]="32|0|"
-    ["minerva_math"]="32|0|"
-    ["ifeval"]="32|0|"
+    ["gsm8k"]="1|0|"
+    ["minerva_math"]="1|0|"
+    ["ifeval"]="1|0|"
 )
 
 # Build list of tasks to run
