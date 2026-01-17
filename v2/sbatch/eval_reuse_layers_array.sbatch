@@ -8,8 +8,8 @@
 #SBATCH --gres=gpu:V100:1
 #SBATCH --time=04:00:00
 #SBATCH -qinferno
-#SBATCH --output=logs/reuse_layers_%A_%a.out
-#SBATCH --error=logs/reuse_layers_%A_%a.err
+#SBATCH --output=logs/reuse_layers/%A/task_%a.log
+#SBATCH --error=logs/reuse_layers/%A/task_%a.log
 #SBATCH --array=0-8
 
 # =============================================================================
@@ -30,6 +30,7 @@
 #   sbatch --array=0,3,6 sbatch/eval_reuse_layers_array.sbatch  # Only k=1
 #
 # Results: results/reuse_layers/<task>/<timestamp>_<config>/
+# Logs:    logs/reuse_layers/<job_id>/task_<array_id>.log (also copied to results directory)
 # =============================================================================
 
 set -e
@@ -67,6 +68,9 @@ fi
 
 # Change to project directory
 cd /storage/scratch1/9/mgustineli3/Fast-dLLM/v2
+
+# Ensure logs directory exists
+mkdir -p "logs/reuse_layers/${SLURM_ARRAY_JOB_ID}"
 
 # Activate virtual environment
 source ../.venv/bin/activate
@@ -122,12 +126,15 @@ accelerate launch eval.py \
     --model fast_dllm_v2 \
     --batch_size 1 \
     --num_fewshot 0 \
-    --confirm_run_unsafe_code \
-    --apply_chat_template \
     --model_args "model_path=${MODEL_PATH},reuse_k=${K},layer_subset=${SUBSET},use_block_cache=True,show_speed=True" \
     ${LIMIT_ARG} \
     --output_path ${OUTPUT_DIR}/
 
+# Copy log to results directory
+LOG_DIR="logs/reuse_layers/${SLURM_ARRAY_JOB_ID}"
+cp "${LOG_DIR}/task_${SLURM_ARRAY_TASK_ID}.log" "${OUTPUT_DIR}/slurm.log" 2>/dev/null || true
+
 echo ""
 echo "[INFO] Task $SLURM_ARRAY_TASK_ID complete: ${CONFIG}"
 echo "[INFO] Results: ${OUTPUT_DIR}"
+echo "[INFO] Log: ${LOG_DIR}/task_${SLURM_ARRAY_TASK_ID}.log"
