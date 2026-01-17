@@ -8,8 +8,8 @@
 #SBATCH --gres=gpu:V100:1
 #SBATCH --time=04:00:00
 #SBATCH -qinferno
-#SBATCH --output=logs/reuse_layers/%A/task_%a.log
-#SBATCH --error=logs/reuse_layers/%A/task_%a.log
+#SBATCH --output=logs/slurm_%A_%a.log
+#SBATCH --error=logs/slurm_%A_%a.log
 #SBATCH --array=0-8
 
 # =============================================================================
@@ -30,7 +30,7 @@
 #   sbatch --array=0,3,6 sbatch/eval_reuse_layers_array.sbatch  # Only k=1
 #
 # Results: results/reuse_layers/<task>/<timestamp>_<config>/
-# Logs:    logs/reuse_layers/<job_id>/task_<array_id>.log (also copied to results directory)
+# Logs:    logs/reuse_layers/<task>/<timestamp>_<config>/slurm.log
 # =============================================================================
 
 set -e
@@ -69,8 +69,8 @@ fi
 # Change to project directory
 cd /storage/scratch1/9/mgustineli3/Fast-dLLM/v2
 
-# Ensure logs directory exists
-mkdir -p "logs/reuse_layers/${SLURM_ARRAY_JOB_ID}"
+# Ensure base logs directory exists
+mkdir -p "logs"
 
 # Activate virtual environment
 source ../.venv/bin/activate
@@ -97,18 +97,21 @@ K_VALUES=(1 2 3 1 2 3 1 2 3)
 SUBSET=${SUBSETS[$SLURM_ARRAY_TASK_ID]}
 K=${K_VALUES[$SLURM_ARRAY_TASK_ID]}
 
-# Build config string and output path
+# Build config string and output paths (same structure for results and logs)
 CONFIG="k${K}_${SUBSET}_n${NUM_SAMPLES}"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-OUTPUT_DIR="results/${EXPERIMENT}/${TASK}/${TIMESTAMP}_${CONFIG}"
+RUN_DIR="${TIMESTAMP}_${CONFIG}"
+OUTPUT_DIR="results/${EXPERIMENT}/${TASK}/${RUN_DIR}"
+LOG_DIR="logs/${EXPERIMENT}/${TASK}/${RUN_DIR}"
 
-# Export for eval.py logging
+# Export for eval.py
 export TASK_NAME=$TASK
 export RUN_TAG=$CONFIG
-export RUN_TIMESTAMP=$TIMESTAMP
+export OUTPUT_DIR=$OUTPUT_DIR
 
-# Create results directory
+# Create results and logs directories
 mkdir -p "$OUTPUT_DIR"
+mkdir -p "$LOG_DIR"
 
 echo "============================================================================="
 echo "SLURM Array Job: Task $SLURM_ARRAY_TASK_ID of $SLURM_ARRAY_TASK_COUNT"
@@ -130,11 +133,12 @@ accelerate launch eval.py \
     ${LIMIT_ARG} \
     --output_path ${OUTPUT_DIR}/
 
-# Copy log to results directory
-LOG_DIR="logs/reuse_layers/${SLURM_ARRAY_JOB_ID}"
-cp "${LOG_DIR}/task_${SLURM_ARRAY_TASK_ID}.log" "${OUTPUT_DIR}/slurm.log" 2>/dev/null || true
+# Move SLURM temp log to organized location and copy to results
+SLURM_LOG="logs/slurm_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.log"
+mv "${SLURM_LOG}" "${LOG_DIR}/slurm.log" 2>/dev/null || true
+cp "${LOG_DIR}/slurm.log" "${OUTPUT_DIR}/slurm.log" 2>/dev/null || true
 
 echo ""
 echo "[INFO] Task $SLURM_ARRAY_TASK_ID complete: ${CONFIG}"
 echo "[INFO] Results: ${OUTPUT_DIR}"
-echo "[INFO] Log: ${LOG_DIR}/task_${SLURM_ARRAY_TASK_ID}.log"
+echo "[INFO] Log: ${LOG_DIR}/slurm.log"

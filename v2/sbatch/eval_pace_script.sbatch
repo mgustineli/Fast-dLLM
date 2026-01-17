@@ -8,8 +8,8 @@
 #SBATCH --gres=gpu:V100:1
 #SBATCH --time=08:00:00
 #SBATCH -qinferno
-#SBATCH --output=logs/baseline/%j/slurm.log
-#SBATCH --error=logs/baseline/%j/slurm.log
+#SBATCH --output=logs/slurm_%j.log
+#SBATCH --error=logs/slurm_%j.log
 
 # =============================================================================
 # Fast-dLLM Baseline Evaluation - PACE Cluster
@@ -25,7 +25,7 @@
 # Available tasks: mmlu, gpqa_main_n_shot, gsm8k, minerva_math, ifeval
 #
 # Results: results/baseline/<task>/<timestamp>_<config>/
-# Logs:    logs/baseline/<job_id>/slurm.log (also copied to results directory)
+# Logs:    logs/baseline/<task>/<timestamp>_<config>/slurm.log
 # =============================================================================
 
 set -e
@@ -58,8 +58,8 @@ done
 # Change to project directory
 cd /storage/scratch1/9/mgustineli3/Fast-dLLM/v2
 
-# Ensure logs directory exists
-mkdir -p "logs/baseline/${SLURM_JOB_ID}"
+# Ensure base logs directory exists
+mkdir -p "logs"
 
 # Activate virtual environment
 source ../.venv/bin/activate
@@ -80,7 +80,6 @@ EXPERIMENT="baseline"
 
 # Timestamp (shared across all tasks)
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-export RUN_TIMESTAMP=$TIMESTAMP
 
 echo "============================================================================="
 echo "Fast-dLLM Baseline Evaluation"
@@ -124,16 +123,20 @@ for TASK in "${TASKS_TO_RUN[@]}"; do
     # Parse task configuration
     IFS='|' read -r BATCH_SIZE NUM_FEWSHOT EXTRA_ARGS <<< "${TASK_CONFIGS[$TASK]}"
 
-    # Build config string and output path
+    # Build config string and output paths (same structure for results and logs)
     CONFIG="threshold1_n${NUM_SAMPLES}"
-    OUTPUT_DIR="results/${EXPERIMENT}/${TASK}/${TIMESTAMP}_${CONFIG}"
+    RUN_DIR="${TIMESTAMP}_${CONFIG}"
+    OUTPUT_DIR="results/${EXPERIMENT}/${TASK}/${RUN_DIR}"
+    LOG_DIR="logs/${EXPERIMENT}/${TASK}/${RUN_DIR}"
 
-    # Export for eval.py logging
+    # Export for eval.py
     export TASK_NAME=$TASK
     export RUN_TAG=$CONFIG
+    export OUTPUT_DIR=$OUTPUT_DIR
 
-    # Create results directory
+    # Create results and logs directories
     mkdir -p "$OUTPUT_DIR"
+    mkdir -p "$LOG_DIR"
 
     echo ""
     echo "============================================================================="
@@ -153,17 +156,22 @@ for TASK in "${TASKS_TO_RUN[@]}"; do
         ${LIMIT_ARG} \
         --output_path ${OUTPUT_DIR}/
 
-    # Copy log to results directory
-    LOG_DIR="logs/baseline/${SLURM_JOB_ID}"
-    cp "${LOG_DIR}/slurm.log" "${OUTPUT_DIR}/slurm.log" 2>/dev/null || true
+    # Copy current SLURM log to task-specific log and results directories
+    SLURM_LOG="logs/slurm_${SLURM_JOB_ID}.log"
+    cp "${SLURM_LOG}" "${LOG_DIR}/slurm.log" 2>/dev/null || true
+    cp "${SLURM_LOG}" "${OUTPUT_DIR}/slurm.log" 2>/dev/null || true
 
     echo "[INFO] Complete: ${TASK}"
     echo "[INFO] Results: ${OUTPUT_DIR}"
+    echo "[INFO] Log: ${LOG_DIR}/slurm.log"
 done
+
+# Clean up temp SLURM log after all tasks complete
+rm -f "logs/slurm_${SLURM_JOB_ID}.log" 2>/dev/null || true
 
 echo ""
 echo "============================================================================="
 echo "[INFO] All tasks completed"
 echo "[INFO] Results: results/${EXPERIMENT}/"
-echo "[INFO] Logs: logs/baseline/${SLURM_JOB_ID}/"
+echo "[INFO] Logs: logs/${EXPERIMENT}/"
 echo "============================================================================="

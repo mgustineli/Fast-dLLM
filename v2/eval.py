@@ -21,13 +21,14 @@ This file is inspired by the code from https://github.com/ML-GSAI/SMDM
 
 import accelerate
 import torch
-import os, re, io, json, time, types
+import os
+import json
+import time
+import types
 import random
 import numpy as np
 import torch.nn.functional as F
 import generation_functions
-import lm_eval
-from pathlib import Path
 from datasets import Dataset
 from datetime import datetime
 from lm_eval.__main__ import cli_evaluate
@@ -36,7 +37,7 @@ from lm_eval.api.registry import register_model, MODEL_REGISTRY
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 from transformers.cache_utils import DynamicCache
-from log_utils import start_run_log, end_run_log
+from log_utils import write_summary
 
 
 # patch DynamicCache globally (HF >=4.42)
@@ -383,29 +384,15 @@ class Fast_dLLM_v2EvalHarness(LM):
 
         end_time = time.time()
 
-        # return output
+        # Store throughput metrics on class for later retrieval (class var so main can access)
         if self.show_speed:
             total_time = end_time - start_time
             tokens_per_s = float(num_tokens) / total_time
-            metrics = {
+            Fast_dLLM_v2EvalHarness.throughput_metrics = {
                 "tokens_generated": int(num_tokens),
-                "total_time_s": total_time,
-                "tokens_per_s": tokens_per_s,
+                "total_time_s": round(total_time, 2),
+                "tokens_per_s": round(tokens_per_s, 2),
             }
-            # write metrics to file
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-
-            # infer directory of the current run summary (safe fallback to results/)
-            base_dir = "results"
-            if hasattr(self, "run_info") and "path" in getattr(self, "run_info", {}):
-                base_dir = os.path.dirname(self.run_info["path"])
-            elif os.environ.get("RUN_TIMESTAMP"):
-                base_dir = os.path.join("results", os.environ["RUN_TIMESTAMP"])
-            os.makedirs(base_dir, exist_ok=True)
-            # write runtime metrics inside timestamp folder
-            metrics_path = os.path.join(base_dir, f"runtime_metrics_{timestamp}.json")
-            with open(metrics_path, "w") as f:
-                json.dump(metrics, f, indent=2)
 
             print(f"Total number of tokens generated: {num_tokens}")
             print(f"Total time taken: {total_time:.2f} seconds")
@@ -415,33 +402,26 @@ class Fast_dLLM_v2EvalHarness(LM):
 
 
 if __name__ == "__main__":
-    # get task/tag dynamically if passed from bash
+    # Get config from environment (set by sbatch scripts)
     task = os.environ.get("TASK_NAME", "gsm8k")
-    tag = os.environ.get("RUN_TAG", None)
-    timestamp = os.environ.get("RUN_TIMESTAMP", datetime.now().strftime("%Y%m%d_%H%M%S"))
+    config_tag = os.environ.get("RUN_TAG", "default")
+    output_dir = os.environ.get("OUTPUT_DIR")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # create timestamp folder
-    base_dir = os.path.join("results", timestamp)
-    os.makedirs(base_dir, exist_ok=True)
-
-    # output dir for lm-eval results (raw predictions, etc.)
-    results_dir = os.path.join(base_dir, f"{task}_{tag}_raw")
-
-    # start timer/log
-    run_info = start_run_log(task=task, tag=tag, log_dir=base_dir)
-
-    # run the evaluation
+    # Run the evaluation (lm_eval writes results.json to --output_path)
     cli_evaluate()
 
-    # retrieve the most recent model instance created by lm_eval
-    model_instance = None
-    for model_name, model_cls in MODEL_REGISTRY.items():
-        if model_name == "fast_dllm_v2" and hasattr(model_cls, "last_metrics"):
-            model_instance = model_cls
-            break
+    # Write summary.json if OUTPUT_DIR is set
+    if output_dir and os.path.isdir(output_dir):
+        # Get throughput metrics from class variable (stored during generate_until)
+        throughput = getattr(Fast_dLLM_v2EvalHarness, "throughput_metrics", {})
 
-    # retrieve metrics directly from the model class
-    metrics = getattr(model_instance, "last_metrics", {}) if model_instance else {}
-    data = end_run_log(run_info, results_dir=results_dir, **metrics)
-    with open(run_info["path"], "w") as f:
-        json.dump(data, f, indent=2)
+        write_summary(
+            output_dir=output_dir,
+            task=task,
+            config=config_tag,
+            throughput_metrics=throughput,
+            timestamp=timestamp,
+        )
+    else:
+        print("[WARN] OUTPUT_DIR not set or invalid, skipping summary.json")
