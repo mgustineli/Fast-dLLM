@@ -21,10 +21,12 @@
 #   Task 2: first,  k=3     Task 5: middle, k=3     Task 8: last, k=3
 #
 # Usage:
-#   sbatch sbatch/eval_reuse_layers_array.sbatch              # Full evaluation
-#   sbatch sbatch/eval_reuse_layers_array.sbatch --limit 10   # Test mode
+#   sbatch sbatch/eval_reuse_layers_array.sbatch                      # GSM8K full
+#   sbatch sbatch/eval_reuse_layers_array.sbatch --limit 10           # Test mode
+#   sbatch sbatch/eval_reuse_layers_array.sbatch --task mmlu          # Different task
+#   sbatch sbatch/eval_reuse_layers_array.sbatch --task mmlu --limit 10
 #
-# To run specific tasks only:
+# To run specific configurations only:
 #   sbatch --array=0,3,6 sbatch/eval_reuse_layers_array.sbatch  # Only k=1
 #
 # Results: results/reuse_layers/<task>/<timestamp>_<config>/
@@ -32,15 +34,35 @@
 
 set -e
 
-# Parse optional --limit argument
+# Parse arguments
 LIMIT_ARG=""
 NUM_SAMPLES="all"
-if [ "$1" == "--limit" ] && [ -n "$2" ]; then
-    LIMIT_ARG="--limit $2"
-    NUM_SAMPLES=$2
-    echo "[INFO] Limiting evaluation to $NUM_SAMPLES samples"
+TASK="gsm8k"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --limit)
+            LIMIT_ARG="--limit $2"
+            NUM_SAMPLES=$2
+            shift 2
+            ;;
+        --task)
+            TASK=$2
+            shift 2
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            echo "Usage: sbatch eval_reuse_layers_array.sbatch [--task <task>] [--limit <n>]"
+            exit 1
+            ;;
+    esac
+done
+
+echo "[INFO] Task: ${TASK}"
+if [ "$NUM_SAMPLES" == "all" ]; then
+    echo "[INFO] Running full evaluation"
 else
-    echo "[INFO] Running full evaluation (no limit specified)"
+    echo "[INFO] Limiting evaluation to $NUM_SAMPLES samples"
 fi
 
 # Change to project directory
@@ -58,7 +80,6 @@ export PYTHONHASHSEED=42
 
 # Model configuration
 MODEL_PATH="Efficient-Large-Model/Fast_dLLM_v2_7B"
-TASK="gsm8k"
 EXPERIMENT="reuse_layers"
 
 # Define experiment configurations (array index -> subset, k)
