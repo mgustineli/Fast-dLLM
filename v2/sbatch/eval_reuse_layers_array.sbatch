@@ -26,12 +26,13 @@
 #
 # To run specific tasks only:
 #   sbatch --array=0,3,6 sbatch/eval_reuse_layers_array.sbatch  # Only k=1
+#
+# Results: results/reuse_layers/<task>/<timestamp>_<config>/
 # =============================================================================
 
 set -e
 
 # Parse optional --limit argument
-# Usage: sbatch sbatch/eval_reuse_layers_array.sbatch --limit 10
 LIMIT_ARG=""
 NUM_SAMPLES="all"
 if [ "$1" == "--limit" ] && [ -n "$2" ]; then
@@ -58,9 +59,9 @@ export PYTHONHASHSEED=42
 # Model configuration
 MODEL_PATH="Efficient-Large-Model/Fast_dLLM_v2_7B"
 TASK="gsm8k"
+EXPERIMENT="reuse_layers"
 
-# Define experiment configurations
-# Array index -> (subset, k)
+# Define experiment configurations (array index -> subset, k)
 SUBSETS=("first" "first" "first" "middle" "middle" "middle" "last" "last" "last")
 K_VALUES=(1 2 3 1 2 3 1 2 3)
 
@@ -68,21 +69,25 @@ K_VALUES=(1 2 3 1 2 3 1 2 3)
 SUBSET=${SUBSETS[$SLURM_ARRAY_TASK_ID]}
 K=${K_VALUES[$SLURM_ARRAY_TASK_ID]}
 
-# Create timestamp and tag
+# Build config string and output path
+CONFIG="k${K}_${SUBSET}_n${NUM_SAMPLES}"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-TAG="reuse_${SUBSET}_k${K}_limit${NUM_SAMPLES}"
+OUTPUT_DIR="results/${EXPERIMENT}/${TASK}/${TIMESTAMP}_${CONFIG}"
 
 # Export for eval.py logging
 export TASK_NAME=$TASK
-export RUN_TAG=$TAG
+export RUN_TAG=$CONFIG
 export RUN_TIMESTAMP=$TIMESTAMP
 
 # Create results directory
-mkdir -p results/${TIMESTAMP}
+mkdir -p "$OUTPUT_DIR"
 
 echo "============================================================================="
 echo "SLURM Array Job: Task $SLURM_ARRAY_TASK_ID of $SLURM_ARRAY_TASK_COUNT"
-echo "Configuration: subset=${SUBSET}, reuse_k=${K}, samples=${NUM_SAMPLES}"
+echo "Experiment: ${EXPERIMENT}"
+echo "Task: ${TASK}"
+echo "Config: subset=${SUBSET}, k=${K}, samples=${NUM_SAMPLES}"
+echo "Output: ${OUTPUT_DIR}"
 echo "Job ID: $SLURM_JOB_ID, Array Job ID: $SLURM_ARRAY_JOB_ID"
 echo "Node: $SLURMD_NODENAME, GPU: $CUDA_VISIBLE_DEVICES"
 echo "============================================================================="
@@ -97,8 +102,8 @@ accelerate launch eval.py \
     --apply_chat_template \
     --model_args "model_path=${MODEL_PATH},reuse_k=${K},layer_subset=${SUBSET},use_block_cache=True,show_speed=True" \
     ${LIMIT_ARG} \
-    --output_path results/${TIMESTAMP}/gsm8k_${TAG}_raw/
+    --output_path ${OUTPUT_DIR}/
 
 echo ""
-echo "[INFO] Task $SLURM_ARRAY_TASK_ID complete: ${SUBSET}, k=${K}"
-echo "[INFO] Results: results/${TIMESTAMP}/gsm8k_${TAG}_raw/"
+echo "[INFO] Task $SLURM_ARRAY_TASK_ID complete: ${CONFIG}"
+echo "[INFO] Results: ${OUTPUT_DIR}"

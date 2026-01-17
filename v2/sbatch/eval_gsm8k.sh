@@ -1,53 +1,85 @@
 #!/bin/bash
 set -e
 
+# =============================================================================
+# Baseline GSM8K Evaluation
+# =============================================================================
 # Usage:
-# bash eval_gsm8k.sh             → full evaluation
-# bash eval_gsm8k.sh --limit 10  → test mode (10 samples)
+#   bash sbatch/eval_gsm8k.sh                        # Full evaluation
+#   bash sbatch/eval_gsm8k.sh --limit 10             # Test with 10 samples
+#   bash sbatch/eval_gsm8k.sh --limit 10 --batch_size 4
+#
+# Results: results/baseline/<task>/<timestamp>_<config>/
+# =============================================================================
 
-# parse optional --limit argument
+# Parse arguments
 LIMIT_ARG=""
-if [ "$1" == "--limit" ] && [ -n "$2" ]; then
-    LIMIT_ARG="--limit $2"
-    echo "[INFO] Limiting evaluation to $2 samples"
-fi
-
-# parse optional --batch_size argument
+NUM_SAMPLES="all"
 BATCH_SIZE=1
-if [ "$3" == "--batch_size" ] && [ -n "$4" ]; then
-    BATCH_SIZE=$4
-    echo "[INFO] Setting batch size to $BATCH_SIZE"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --limit)
+            LIMIT_ARG="--limit $2"
+            NUM_SAMPLES=$2
+            shift 2
+            ;;
+        --batch_size)
+            BATCH_SIZE=$2
+            shift 2
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            exit 1
+            ;;
+    esac
+done
+
+if [ "$NUM_SAMPLES" == "all" ]; then
+    echo "[INFO] Running full evaluation"
+else
+    echo "[INFO] Limiting evaluation to $NUM_SAMPLES samples"
 fi
 
-# environment setup
+# Environment setup
 export HF_ALLOW_CODE_EVAL=1
 export HF_DATASETS_TRUST_REMOTE_CODE=true
 
-# model and experiment info
+# Model configuration
 MODEL_PATH="Efficient-Large-Model/Fast_dLLM_v2_7B"
 TASK="gsm8k"
-TAG="threshold1_run"
+EXPERIMENT="baseline"
 
-# datetime for saving results
+# Build config string
+CONFIG="threshold1_n${NUM_SAMPLES}"
+
+# Timestamp and output path
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+OUTPUT_DIR="results/${EXPERIMENT}/${TASK}/${TIMESTAMP}_${CONFIG}"
 
-# pass variables to eval.py for logging
+# Export for eval.py logging
 export TASK_NAME=$TASK
-export RUN_TAG=$TAG
+export RUN_TAG=$CONFIG
 export RUN_TIMESTAMP=$TIMESTAMP
 
-# create results directory if not exists
-mkdir -p results/${TIMESTAMP}
+# Create results directory
+mkdir -p "$OUTPUT_DIR"
 
-# run evaluation
-echo "[INFO] Starting evaluation: $TASK (${MODEL_PATH})"
+echo "============================================================================="
+echo "Experiment: ${EXPERIMENT}"
+echo "Task: ${TASK}"
+echo "Config: ${CONFIG}"
+echo "Output: ${OUTPUT_DIR}"
+echo "============================================================================="
+
+# Run evaluation
 accelerate launch eval.py \
---tasks ${TASK} \
---batch_size 1 \
---num_fewshot 0 \
-${LIMIT_ARG} \
---model fast_dllm_v2 \
---model_args model_path=${MODEL_PATH},threshold=1,show_speed=True \
---output_path results/${TIMESTAMP}/${TASK}_${TAG}_raw/
+    --tasks ${TASK} \
+    --batch_size ${BATCH_SIZE} \
+    --num_fewshot 0 \
+    ${LIMIT_ARG} \
+    --model fast_dllm_v2 \
+    --model_args model_path=${MODEL_PATH},threshold=1,show_speed=True \
+    --output_path ${OUTPUT_DIR}/
 
-echo "[INFO] Evaluation complete."
+echo "[INFO] Evaluation complete. Results: ${OUTPUT_DIR}"
