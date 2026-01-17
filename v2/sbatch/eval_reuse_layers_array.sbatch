@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=reuse-layers
-#SBATCH --account=pacepsdsgt-clef2026
+#SBATCH --account=gts-ylin715-paid
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -67,6 +67,9 @@ fi
 
 # Change to project directory
 cd /storage/scratch1/9/mgustineli3/Fast-dLLM/v2
+
+# Activate virtual environment
+source ../.venv/bin/activate
 
 # Environment setup
 export HF_ALLOW_CODE_EVAL=1
