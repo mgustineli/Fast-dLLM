@@ -6,8 +6,8 @@
 # Results are stored by config name (not timestamp) for easy detection.
 #
 # Usage:
-#   bash sbatch/run.sh --status                  # Show completion status
 #   bash sbatch/run.sh                           # Run missing only (gsm8k)
+#   bash sbatch/run.sh --status                  # Show completion status
 #   bash sbatch/run.sh --task mmlu               # Run missing for different task
 #   bash sbatch/run.sh --limit 10                # Test mode (10 samples)
 #   bash sbatch/run.sh --task mmlu --limit 10    # Combine options
