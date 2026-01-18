@@ -84,20 +84,49 @@ fi
 # Ensure base logs directory exists
 mkdir -p "logs"
 
-# Activate existing virtual environment from scratch (persistent, large storage)
-# Setup once with: cd ~/scratch/Fast-dLLM/v2 && uv venv .venv && uv pip install -e . && uv pip install torch
-SCRATCH_VENV="$HOME/scratch/Fast-dLLM/v2/.venv"
-if [ -d "$SCRATCH_VENV" ]; then
+# =============================================================================
+# Virtual Environment Setup (persistent venv in scratch)
+# =============================================================================
+SCRATCH_PROJECT="$HOME/scratch/Fast-dLLM/v2"
+SCRATCH_VENV="$SCRATCH_PROJECT/.venv"
+LOCK_FILE="$SCRATCH_PROJECT/.venv_setup.lock"
+
+setup_scratch_venv() {
+    echo "[INFO] Setting up venv at $SCRATCH_VENV (this may take a few minutes)..."
+    mkdir -p "$SCRATCH_PROJECT"
+    cd "$SCRATCH_PROJECT"
+    uv venv .venv
+    source .venv/bin/activate
+    uv pip install -e .
+    uv pip install torch --index-url https://download.pytorch.org/whl/cu121
+    cd "$PROJECT_ROOT"
+    echo "[INFO] Venv setup complete"
+}
+
+# Check if venv exists, if not create it (with lock to prevent races)
+if [ -d "$SCRATCH_VENV" ] && [ -f "$SCRATCH_VENV/bin/activate" ]; then
     echo "[INFO] Activating venv from scratch: $SCRATCH_VENV"
     source "$SCRATCH_VENV/bin/activate"
-elif [ -d "$PROJECT_ROOT/.venv" ]; then
-    echo "[INFO] Activating venv at $PROJECT_ROOT/.venv"
-    source "$PROJECT_ROOT/.venv/bin/activate"
 else
-    echo "[ERROR] No virtual environment found. Create one with:"
-    echo "  cd ~/scratch/Fast-dLLM/v2 && uv venv .venv && uv pip install -e . && uv pip install torch"
-    exit 1
+    # Use lock file to prevent multiple jobs from installing simultaneously
+    exec 200>"$LOCK_FILE"
+    if flock -n 200; then
+        # Got the lock, check again (another job might have just finished)
+        if [ ! -d "$SCRATCH_VENV" ]; then
+            setup_scratch_venv
+        fi
+        source "$SCRATCH_VENV/bin/activate"
+        flock -u 200
+    else
+        # Another job is installing, wait for it
+        echo "[INFO] Another job is setting up venv, waiting..."
+        flock 200
+        source "$SCRATCH_VENV/bin/activate"
+        flock -u 200
+    fi
 fi
+
+echo "[INFO] Python: $(which python)"
 
 # Environment setup
 export HF_ALLOW_CODE_EVAL=1
