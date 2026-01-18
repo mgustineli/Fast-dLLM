@@ -6,13 +6,16 @@
 # Results are stored by config name (not timestamp) for easy detection.
 #
 # Usage:
-#   bash sbatch/run_reuse_experiments.sh                    # Run missing only
-#   bash sbatch/run_reuse_experiments.sh --dry-run          # Show what would run
-#   bash sbatch/run_reuse_experiments.sh --force            # Re-run all
-#   bash sbatch/run_reuse_experiments.sh --force k2_middle  # Re-run specific config
-#   bash sbatch/run_reuse_experiments.sh --status           # Show completion status
-#   bash sbatch/run_reuse_experiments.sh --limit 10         # Test mode (10 samples)
+#   bash sbatch/run.sh --status                  # Show completion status
+#   bash sbatch/run.sh                           # Run missing only (gsm8k)
+#   bash sbatch/run.sh --task mmlu               # Run missing for different task
+#   bash sbatch/run.sh --limit 10                # Test mode (10 samples)
+#   bash sbatch/run.sh --task mmlu --limit 10    # Combine options
+#   bash sbatch/run.sh --dry-run                 # Preview without submitting
+#   bash sbatch/run.sh --force                   # Re-run all configs
+#   bash sbatch/run.sh --force k2_middle         # Re-run specific config
 #
+# Tasks: gsm8k (default), mmlu, gpqa_main_n_shot, minerva_math, ifeval
 # Configs: k1_first, k1_middle, k1_last, k2_first, k2_middle, k2_last, k3_first, k3_middle, k3_last
 # =============================================================================
 
@@ -176,4 +179,4 @@ done
 
 echo ""
 echo "[INFO] Submitted ${#TO_RUN_SORTED[@]} jobs. Check status with: squeue -u $USER"
-echo "[INFO] View progress with: bash sbatch/run_reuse_experiments.sh --status"
+echo "[INFO] View progress with: bash sbatch/run.sh --status"

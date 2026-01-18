@@ -11,7 +11,7 @@
 # =============================================================================
 # Single Reuse Layer Experiment
 # =============================================================================
-# Called by run_reuse_experiments.sh with environment variables:
+# Called by run.sh with environment variables:
 #   CONFIG_NAME: e.g., "k2_middle"
 #   REUSE_K: e.g., "2"
 #   LAYER_SUBSET: e.g., "middle"
