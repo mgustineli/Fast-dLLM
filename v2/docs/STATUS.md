@@ -26,9 +26,9 @@ Fixed 6x performance gap between Ampere and Turing GPUs:
 New workflow avoids re-running completed experiments:
 
 ```bash
-bash sbatch/run_reuse_experiments.sh --status   # Check completion
-bash sbatch/run_reuse_experiments.sh            # Run only missing
-bash sbatch/run_reuse_experiments.sh --force    # Re-run all
+bash sbatch/run.sh --status   # Check completion
+bash sbatch/run.sh            # Run only missing
+bash sbatch/run.sh --force    # Re-run all
 ```
 
 ## Key Results

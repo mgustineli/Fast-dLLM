@@ -20,19 +20,19 @@ Fast-dLLM v2 research project documentation.
 ### Check Status
 ```bash
 cd ~/eic-lab/Fast-dLLM/v2
-bash sbatch/run_reuse_experiments.sh --status
+bash sbatch/run.sh --status
 ```
 
 ### Run Missing Experiments
 ```bash
-bash sbatch/run_reuse_experiments.sh           # Run missing only
-bash sbatch/run_reuse_experiments.sh --limit 10  # Test mode
+bash sbatch/run.sh           # Run missing only
+bash sbatch/run.sh --limit 10  # Test mode
 ```
 
 ### Force Re-run
 ```bash
-bash sbatch/run_reuse_experiments.sh --force k2_middle  # Specific config
-bash sbatch/run_reuse_experiments.sh --force            # All configs
+bash sbatch/run.sh --force k2_middle  # Specific config
+bash sbatch/run.sh --force            # All configs
 ```
 
 ---
@@ -41,12 +41,12 @@ bash sbatch/run_reuse_experiments.sh --force            # All configs
 
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
-| `sbatch/run_reuse_experiments.sh` | Smart runner: only runs missing experiments | **Primary workflow** |
-| `sbatch/eval_reuse_single.sh` | Single SLURM job for one config | Called by runner |
-| `sbatch/eval_pace_script.sh` | Baseline evaluation (multi-task) | Baseline benchmarks |
-| `sbatch/eval_script.sh` | Local evaluation (no SLURM) | Interactive testing |
+| `sbatch/run.sh` | Smart runner: only runs missing experiments | **Primary workflow** |
+| `sbatch/baseline.sh` | Baseline evaluation (multi-task) | Baseline benchmarks |
+| `sbatch/local.sh` | Local evaluation (no SLURM) | Interactive testing |
+| `sbatch/_job.sh` | Single SLURM job for one config | Internal (called by `run.sh`) |
+| `sbatch/_array.sh` | Array job for layer reuse | **Deprecated** |
 | `setup_tmpdir_venv.sh` | Create fast TMPDIR venv | Interactive sessions only |
-| `sbatch/eval_reuse_layers_array.sh` | Array job for layer reuse | **Deprecated** |
 
 ---
 

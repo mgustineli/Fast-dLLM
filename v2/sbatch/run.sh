@@ -171,7 +171,7 @@ for config in "${TO_RUN_SORTED[@]}"; do
         --job-name="reuse-$config" \
         --output="logs/${EXPERIMENT}/${TASK}/${config}/slurm_%j.log" \
         --export=ALL,CONFIG_NAME="$config",REUSE_K="$K",LAYER_SUBSET="$SUBSET",LIMIT_ARG="$LIMIT_ARG",TASK_ARG="$TASK_ARG" \
-        "$SCRIPT_DIR/eval_reuse_single.sh"
+        "$SCRIPT_DIR/_job.sh"
 done
 
 echo ""

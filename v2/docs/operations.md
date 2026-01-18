@@ -13,11 +13,11 @@ How to run Fast-dLLM v2 experiments on the Georgia Tech PACE cluster.
 ├── app.py                        # Gradio web interface
 ├── run_chatbot.py               # CLI chatbot
 ├── sbatch/                       # SLURM job scripts
-│   ├── run_reuse_experiments.sh  # Smart experiment runner
-│   ├── eval_reuse_single.sh      # Single experiment job
-│   ├── eval_reuse_layers_array.sh # Array job (deprecated)
-│   ├── eval_pace_script.sh       # Baseline evaluation
-│   └── eval_script.sh            # Local evaluation
+│   ├── run.sh                    # Smart experiment runner (primary)
+│   ├── baseline.sh               # Baseline evaluation
+│   ├── local.sh                  # Local evaluation (no SLURM)
+│   ├── _job.sh                   # Single experiment job (internal)
+│   └── _array.sh                 # Array job (deprecated)
 ├── setup_tmpdir_venv.sh          # Interactive venv setup
 ├── results/                      # Experiment outputs
 │   └── reuse_layers/gsm8k/
@@ -34,12 +34,12 @@ How to run Fast-dLLM v2 experiments on the Georgia Tech PACE cluster.
 
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
-| `run_reuse_experiments.sh` | Smart runner: only runs missing experiments | **Primary workflow** |
-| `eval_reuse_single.sh` | Single SLURM job for one config | Called by runner |
-| `eval_pace_script.sh` | Baseline evaluation (multi-task) | Baseline benchmarks |
-| `eval_script.sh` | Local evaluation (no SLURM) | Interactive testing |
+| `run.sh` | Smart runner: only runs missing experiments | **Primary workflow** |
+| `baseline.sh` | Baseline evaluation (multi-task) | Baseline benchmarks |
+| `local.sh` | Local evaluation (no SLURM) | Interactive testing |
+| `_job.sh` | Single SLURM job for one config | Internal (called by `run.sh`) |
+| `_array.sh` | Array job for layer reuse | **Deprecated** |
 | `setup_tmpdir_venv.sh` | Create fast TMPDIR venv | Interactive sessions only |
-| `eval_reuse_layers_array.sh` | Array job for layer reuse | **Deprecated** - use `run_reuse_experiments.sh` |
 
 ## Quick Start
 
@@ -47,7 +47,7 @@ How to run Fast-dLLM v2 experiments on the Georgia Tech PACE cluster.
 
 ```bash
 cd ~/eic-lab/Fast-dLLM/v2
-bash sbatch/run_reuse_experiments.sh --status
+bash sbatch/run.sh --status
 ```
 
 Output:
@@ -69,13 +69,13 @@ Completed: 2 / 9
 
 ```bash
 # Preview what would run (no submission)
-bash sbatch/run_reuse_experiments.sh --dry-run
+bash sbatch/run.sh --dry-run
 
 # Submit only missing experiments
-bash sbatch/run_reuse_experiments.sh
+bash sbatch/run.sh
 
 # Test mode (10 samples per experiment)
-bash sbatch/run_reuse_experiments.sh --limit 10
+bash sbatch/run.sh --limit 10
 ```
 
 ### 3. Monitor Progress
@@ -85,7 +85,7 @@ bash sbatch/run_reuse_experiments.sh --limit 10
 squeue -u $USER
 
 # Check experiment status
-bash sbatch/run_reuse_experiments.sh --status
+bash sbatch/run.sh --status
 
 # View logs
 tail -f logs/reuse_layers/gsm8k/k2_middle/slurm_*.log
@@ -134,42 +134,42 @@ export HF_DATASETS_TRUST_REMOTE_CODE=true
 
 ```bash
 # Check status
-bash sbatch/run_reuse_experiments.sh --status
+bash sbatch/run.sh --status
 
 # Run missing experiments
-bash sbatch/run_reuse_experiments.sh
+bash sbatch/run.sh
 
 # Run with test mode (10 samples)
-bash sbatch/run_reuse_experiments.sh --limit 10
+bash sbatch/run.sh --limit 10
 
 # Force re-run specific config
-bash sbatch/run_reuse_experiments.sh --force k2_middle
+bash sbatch/run.sh --force k2_middle
 
 # Force re-run all
-bash sbatch/run_reuse_experiments.sh --force
+bash sbatch/run.sh --force
 
 # Different task (default: gsm8k)
-bash sbatch/run_reuse_experiments.sh --task mmlu
+bash sbatch/run.sh --task mmlu
 ```
 
 ### Baseline Evaluation
 
 ```bash
 # Single task
-sbatch sbatch/eval_pace_script.sh --task gsm8k
+sbatch sbatch/baseline.sh --task gsm8k
 
 # All tasks (mmlu, gpqa, gsm8k, minerva_math, ifeval)
-sbatch sbatch/eval_pace_script.sh
+sbatch sbatch/baseline.sh
 
 # Test mode
-sbatch sbatch/eval_pace_script.sh --task gsm8k --limit 10
+sbatch sbatch/baseline.sh --task gsm8k --limit 10
 ```
 
 ### Local Evaluation (No SLURM)
 
 ```bash
 # From v2 directory
-bash sbatch/eval_script.sh --task gsm8k --limit 10
+bash sbatch/local.sh --task gsm8k --limit 10
 ```
 
 ### Custom Evaluation
@@ -236,7 +236,7 @@ python run_chatbot.py
 | Jobs stuck at venv setup | Check `~/scratch/Fast-dLLM/v2/.venv` exists; delete and retry |
 | CUDA OOM | Use `--batch_size 1` (default) |
 | I/O errors on scratch | Known PACE issue; retry or use TMPDIR for interactive |
-| Missing experiments | Run `bash sbatch/run_reuse_experiments.sh` to submit missing |
+| Missing experiments | Run `bash sbatch/run.sh` to submit missing |
 | Re-run specific config | Use `--force k2_middle` flag |
 
 See [PACE Cluster Reference](reference/pace-cluster.md) for more troubleshooting.

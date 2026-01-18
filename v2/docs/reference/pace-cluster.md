@@ -79,26 +79,26 @@ source setup_tmpdir_venv.sh
 cd ~/eic-lab/Fast-dLLM/v2
 
 # Check what's completed vs pending
-bash sbatch/run_reuse_experiments.sh --status
+bash sbatch/run.sh --status
 
 # Run only missing experiments
-bash sbatch/run_reuse_experiments.sh
+bash sbatch/run.sh
 
 # Test mode (10 samples)
-bash sbatch/run_reuse_experiments.sh --limit 10
+bash sbatch/run.sh --limit 10
 
 # Force re-run specific config
-bash sbatch/run_reuse_experiments.sh --force k2_middle
+bash sbatch/run.sh --force k2_middle
 ```
 
 ### Direct SLURM Submission
 
 ```bash
 # Single baseline evaluation
-sbatch sbatch/eval_pace_script.sh --task gsm8k --limit 10
+sbatch sbatch/baseline.sh --task gsm8k --limit 10
 
-# Array job (deprecated - use run_reuse_experiments.sh instead)
-sbatch sbatch/eval_reuse_layers_array.sh --limit 10
+# Array job (deprecated - use run.sh instead)
+sbatch sbatch/_array.sh --limit 10
 ```
 
 ## Array Jobs (Reference)
@@ -134,7 +134,7 @@ Array jobs have issues on PACE:
 2. Race conditions with shared resources
 3. Hard to re-run only failed tasks
 
-Our `run_reuse_experiments.sh` submits individual jobs:
+Our `run.sh` submits individual jobs:
 - Checks completion before submitting
 - Only runs missing experiments
 - Easier to manage and re-run
@@ -147,7 +147,7 @@ Our `run_reuse_experiments.sh` submits individual jobs:
 | Jobs stuck at venv setup | Delete `~/scratch/Fast-dLLM/v2/.venv`, retry |
 | I/O errors on scratch | Known PACE issue; retry or reduce concurrent jobs |
 | Wrong dtype (slow) | Check GPU with `nvidia-smi`; eval.py auto-detects |
-| Array tasks conflict | Use `run_reuse_experiments.sh` instead |
+| Array tasks conflict | Use `run.sh` instead |
 
 ## Useful SLURM Commands
 
