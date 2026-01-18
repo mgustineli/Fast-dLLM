@@ -72,6 +72,43 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 
+def get_optimal_dtype():
+    """
+    Detect GPU architecture and return the optimal dtype for inference.
+
+    - Ampere+ (SM 8.0+): Use bfloat16 (native support, better dynamic range)
+    - Turing (SM 7.5): Use float16 (Tensor Core support, no bfloat16)
+    - Volta (SM 7.0): Use float16
+    - Older: Fall back to float32
+
+    Returns:
+        torch.dtype: The optimal dtype for the current GPU
+    """
+    if not torch.cuda.is_available():
+        return torch.float32
+
+    # Get compute capability of the current device
+    device = torch.cuda.current_device()
+    major, minor = torch.cuda.get_device_capability(device)
+    compute_capability = major * 10 + minor
+
+    gpu_name = torch.cuda.get_device_name(device)
+
+    # SM 8.0+ (Ampere, Ada Lovelace, Hopper): native bfloat16 support
+    if compute_capability >= 80:
+        dtype = torch.bfloat16
+        print(f"[INFO] GPU: {gpu_name} (SM {major}.{minor}) -> Using bfloat16")
+    # SM 7.0-7.5 (Volta, Turing): FP16 Tensor Cores, no bfloat16
+    elif compute_capability >= 70:
+        dtype = torch.float16
+        print(f"[INFO] GPU: {gpu_name} (SM {major}.{minor}) -> Using float16 (Tensor Cores)")
+    else:
+        dtype = torch.float32
+        print(f"[INFO] GPU: {gpu_name} (SM {major}.{minor}) -> Using float32 (no Tensor Cores)")
+
+    return dtype
+
+
 @register_model("fast_dllm_v2")
 class Fast_dLLM_v2EvalHarness(LM):
     def __init__(
@@ -106,10 +143,13 @@ class Fast_dLLM_v2EvalHarness(LM):
         if self.accelerator is not None:
             model_kwargs.update({"device_map": {"": f"{self.accelerator.device}"}})
 
+        # Auto-detect optimal dtype based on GPU architecture
+        self.dtype = get_optimal_dtype()
+
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             trust_remote_code=True,
-            torch_dtype=torch.bfloat16,
+            dtype=self.dtype,
             **model_kwargs,
         )
         self.model.eval()
@@ -196,42 +236,44 @@ class Fast_dLLM_v2EvalHarness(LM):
 
     @torch.no_grad()
     def get_logits(self, batch):
-        logits = self.model(batch).logits
-        logits = torch.cat([logits[:, :1, :], logits[:, :-1, :]], dim=1)
-        return logits[:, : batch.shape[1]]
+        with torch.amp.autocast(device_type="cuda", dtype=self.dtype):
+            logits = self.model(batch).logits
+            logits = torch.cat([logits[:, :1, :], logits[:, :-1, :]], dim=1)
+            return logits[:, : batch.shape[1]]
 
     @torch.no_grad()
     def get_loglikelihood(self, prefix, target):
-        seq = torch.concatenate([prefix, target])[None, :]
+        with torch.amp.autocast(device_type="cuda", dtype=self.dtype):
+            seq = torch.concatenate([prefix, target])[None, :]
 
-        prompt_index = torch.arange(seq.shape[1], device=self.device) < len(prefix)
+            prompt_index = torch.arange(seq.shape[1], device=self.device) < len(prefix)
 
-        loss_acc = []
+            loss_acc = []
 
-        perturbed_seq = self._forward_process(seq.clone(), prompt_index)
+            perturbed_seq = self._forward_process(seq.clone(), prompt_index)
 
-        mask_indices = perturbed_seq == self.mask_id
+            mask_indices = perturbed_seq == self.mask_id
 
-        logits = self.get_logits(perturbed_seq)
-        seq = torch.cat(
-            [
-                seq.to(self.device),
-                torch.full(
-                    (seq.shape[0], self.bd_size - seq.shape[1] % self.bd_size),
-                    -100,
-                    dtype=torch.long,
-                    device=self.device,
-                ),
-            ],
-            dim=1,
-        )
-        loss = F.cross_entropy(
-            logits[mask_indices], seq[mask_indices], reduction="none"
-        )
-        loss = loss.sum()
-        loss_acc.append(loss.item())
+            logits = self.get_logits(perturbed_seq)
+            seq = torch.cat(
+                [
+                    seq.to(self.device),
+                    torch.full(
+                        (seq.shape[0], self.bd_size - seq.shape[1] % self.bd_size),
+                        -100,
+                        dtype=torch.long,
+                        device=self.device,
+                    ),
+                ],
+                dim=1,
+            )
+            loss = F.cross_entropy(
+                logits[mask_indices], seq[mask_indices], reduction="none"
+            )
+            loss = loss.sum()
+            loss_acc.append(loss.item())
 
-        return -sum(loss_acc) / len(loss_acc)
+            return -sum(loss_acc) / len(loss_acc)
 
     def loglikelihood(self, requests):
         def _tokenize(e):
@@ -329,7 +371,7 @@ class Fast_dLLM_v2EvalHarness(LM):
             batched_input_ids = torch.cat(batched_input_ids, dim=0)
             batched_input_ids = batched_input_ids.to(self.device)
 
-            with torch.no_grad():
+            with torch.no_grad(), torch.amp.autocast(device_type="cuda", dtype=self.dtype):
                 if self.accelerator is not None:
                     generated_ids = self.accelerator.unwrap_model(
                         self.model

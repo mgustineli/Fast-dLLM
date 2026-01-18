@@ -2,86 +2,55 @@
 
 > **Last Updated**: January 18, 2026
 
-## Research Thesis
+## Research Goal
 
-Fast-dLLM v2 is a block diffusion language model that efficiently adapts pretrained autoregressive models (Qwen2.5) into parallel text generation systems, achieving 2.5x speedup while requiring only ~1B tokens of fine-tuning (500x reduction vs full-attention diffusion LLMs).
+Fast-dLLM v2 adapts pretrained autoregressive models (Qwen2.5) into parallel text generation via block diffusion, targeting 2.5x+ speedup with ~1B tokens of fine-tuning.
 
-## Current State
+## Current Phase: GPU Precision Optimization
 
-**Phase**: Acceleration Research - Layer Reuse & TRIM Logic
+### Recent Fix: Auto-Dtype Detection
 
-The base Fast-dLLM v2 model is functional with block diffusion and hierarchical caching. Current focus is on additional acceleration techniques (layer reuse, TRIM) to push speedups further.
+Resolved 6x performance gap between Ampere (A40) and Turing (RTX 6000) GPUs:
+
+| GPU | Architecture | Old Dtype | New Dtype | Tokens/s |
+|-----|--------------|-----------|-----------|----------|
+| A40 | Ampere (SM 8.0) | bfloat16 | bfloat16 | ~29 |
+| RTX 6000 | Turing (SM 7.5) | bfloat16 (broken) | float16 | TBD |
+
+**Root Cause**: bfloat16 requires Ampere+. Turing GPUs fell back to FP32, bypassing Tensor Cores.
+
+**Fix**: `get_optimal_dtype()` in `eval.py` auto-detects GPU compute capability and selects:
+- SM 8.0+: bfloat16 (native support)
+- SM 7.0-7.5: float16 (Tensor Core support)
+- Older: float32
 
 ## Key Results
 
-| Finding | Source | Implication |
-|---------|--------|-------------|
-| 2.54x throughput vs Qwen2.5-7B-Instruct | Benchmark | Block diffusion + caching works |
-| 5.2% accuracy improvement over LLaDA | Benchmark | Better quality than prior dLLMs |
-| 83.7% on GSM8K | Eval | Strong math reasoning |
-| 63.4% on HumanEval | Eval | Good code generation |
-
-## Model Variants
-
-| Model | Parameters | HuggingFace |
-|-------|------------|-------------|
-| Fast-dLLM v2 (7B) | 7B | `Efficient-Large-Model/Fast_dLLM_v2_7B` |
-| Fast-dLLM v2 (1.5B) | 1.5B | - |
-
-## Active Research Directions
-
-1. **Layer Reuse** (k=1,2,3) - Skip transformer layers during diffusion steps
-2. **TRIM Logic** - Token-level Reuse Minimization for efficient generation
-3. **Activation Reuse** - Reuse intermediate activations across steps
-4. **Threshold Tuning** - Optimal confidence threshold for parallel decoding
-
-## What Works (Current Implementation)
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Block Diffusion | Working | Core architecture |
-| Block-level KV Cache | Working | Historical context caching |
-| Sub-block Cache | Working | Parallel generation within blocks |
-| Confidence Decoding | Working | `threshold` parameter |
-| Gradio Web UI | Working | `app.py` |
-| CLI Chatbot | Working | `run_chatbot.py` |
-| GSM8K Evaluation | Working | `eval_gsm8k.sh` |
-
-## Experiments
-
-| ID | Name | Status | Result |
-|----|------|--------|--------|
-| - | Baseline GSM8K | Complete | 83.7% accuracy |
-| - | Layer Reuse (k=1,2,3) | In Progress | Testing speedup vs accuracy tradeoff |
-| - | TRIM Logic | In Progress | Token-level optimization |
+| Metric | Value |
+|--------|-------|
+| Throughput vs Qwen2.5-7B | 2.54x |
+| GSM8K Accuracy | 83.7% |
+| HumanEval | 63.4% |
 
 ## Next Steps
 
-1. **[Active]** Layer reuse experiments (k=1,2,3 × first/middle/last subsets) - SLURM jobs timed out at 4h, need longer allocation or local testing
-2. **[Planned]** Implement and test TRIM logic
-3. **[Planned]** Profile activation reuse potential
+1. **[Pending]** Validate RTX 6000 throughput with float16 fix
+2. **[Pending]** Layer reuse experiments (k=1,2,3 × first/middle/last)
+3. **[Planned]** TRIM logic implementation
+4. **[Planned]** Activation reuse profiling
 
-## Benchmark Coverage
+## Active Research
 
-| Benchmark | Status | Score |
-|-----------|--------|-------|
-| GSM8K | Evaluated | 83.7% |
-| HumanEval | Evaluated | 63.4% |
-| MBPP | Evaluated | 63.0% |
-| MMLU | Evaluated | 66.6% |
-| GPQA | Evaluated | 31.9% |
-| IFEval | Evaluated | 61.4% |
-| Math | Evaluated | 61.6% |
-
-## Known Issues
-
-None currently.
+| Feature | Status |
+|---------|--------|
+| Block Diffusion | Working |
+| KV Cache (block + sub-block) | Working |
+| Confidence Decoding | Working |
+| Layer Reuse (k param) | Testing |
+| TRIM Logic | Planned |
 
 ## Quick Links
 
-| Resource | Link |
-|----------|------|
-| Concepts | [concepts/](concepts/) |
-| Operations | [operations.md](operations.md) |
-| PACE Reference | [reference/pace-cluster.md](reference/pace-cluster.md) |
-| Templates | [_templates/](_templates/) |
+- [Concepts](concepts/)
+- [Operations](operations.md)
+- [PACE Reference](reference/pace-cluster.md)
