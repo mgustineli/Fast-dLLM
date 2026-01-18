@@ -32,7 +32,13 @@ if [ ! -f "$PYPROJECT_PATH" ]; then
 fi
 
 # Create venv in TMPDIR if it doesn't exist
-VENV_PATH="$TMPDIR/.venv"
+# Use unique path for SLURM array tasks (multiple tasks may share a node/TMPDIR)
+if [ -n "$SLURM_ARRAY_TASK_ID" ]; then
+    VENV_PATH="$TMPDIR/.venv_task_${SLURM_ARRAY_TASK_ID}"
+else
+    VENV_PATH="$TMPDIR/.venv"
+fi
+
 if [ ! -d "$VENV_PATH" ]; then
     echo "[INFO] Creating virtual environment at $VENV_PATH"
     uv venv "$VENV_PATH"
