@@ -63,42 +63,18 @@ fi
 echo "============================================================================="
 
 # =============================================================================
-# Virtual Environment Setup (persistent venv in scratch)
+# Virtual Environment Setup (per-job venv in TMPDIR for fast local I/O)
 # =============================================================================
-SCRATCH_PROJECT="$HOME/scratch/Fast-dLLM/v2"
-SCRATCH_VENV="$SCRATCH_PROJECT/.venv"
-LOCK_FILE="$SCRATCH_PROJECT/.venv_setup.lock"
+JOB_VENV_DIR="$TMPDIR/fast-dllm-$SLURM_JOB_ID"
+JOB_VENV="$JOB_VENV_DIR/.venv"
 
-setup_scratch_venv() {
-    echo "[INFO] Setting up venv at $SCRATCH_VENV (this may take a few minutes)..."
-    mkdir -p "$SCRATCH_PROJECT"
-    cd "$SCRATCH_PROJECT"
-    uv venv .venv
-    source .venv/bin/activate
-    uv pip install -e .
-    uv pip install torch --index-url https://download.pytorch.org/whl/cu121
-    cd "$PROJECT_ROOT"
-    echo "[INFO] Venv setup complete"
-}
-
-if [ -d "$SCRATCH_VENV" ] && [ -f "$SCRATCH_VENV/bin/activate" ]; then
-    echo "[INFO] Activating venv from scratch: $SCRATCH_VENV"
-    source "$SCRATCH_VENV/bin/activate"
-else
-    exec 200>"$LOCK_FILE"
-    if flock -n 200; then
-        if [ ! -d "$SCRATCH_VENV" ]; then
-            setup_scratch_venv
-        fi
-        source "$SCRATCH_VENV/bin/activate"
-        flock -u 200
-    else
-        echo "[INFO] Another job is setting up venv, waiting..."
-        flock 200
-        source "$SCRATCH_VENV/bin/activate"
-        flock -u 200
-    fi
-fi
+echo "[INFO] Setting up venv at $JOB_VENV..."
+mkdir -p "$JOB_VENV_DIR"
+uv venv "$JOB_VENV"
+source "$JOB_VENV/bin/activate"
+uv pip install -e "$PROJECT_ROOT"
+uv pip install torch --index-url https://download.pytorch.org/whl/cu121
+echo "[INFO] Venv setup complete"
 
 echo "[INFO] Python: $(which python)"
 
