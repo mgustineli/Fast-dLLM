@@ -21,19 +21,34 @@
 #   Task 2: first,  k=3     Task 5: middle, k=3     Task 8: last, k=3
 #
 # Usage:
-#   sbatch sbatch/eval_reuse_layers_array.sbatch                      # GSM8K full
-#   sbatch sbatch/eval_reuse_layers_array.sbatch --limit 10           # Test mode
-#   sbatch sbatch/eval_reuse_layers_array.sbatch --task mmlu          # Different task
-#   sbatch sbatch/eval_reuse_layers_array.sbatch --task mmlu --limit 10
+#   sbatch sbatch/eval_reuse_layers_array.sh                        # GSM8K full
+#   sbatch sbatch/eval_reuse_layers_array.sh --limit 10             # Test mode
+#   sbatch sbatch/eval_reuse_layers_array.sh --task mmlu            # Different task
+#   sbatch sbatch/eval_reuse_layers_array.sh --task mmlu --limit 10
 #
 # To run specific configurations only:
-#   sbatch --array=0,3,6 sbatch/eval_reuse_layers_array.sbatch  # Only k=1
+#   sbatch --array=0,3,6 sbatch/eval_reuse_layers_array.sh          # Only k=1
 #
 # Results: results/reuse_layers/<task>/<timestamp>_<config>/
 # Logs:    logs/reuse_layers/<task>/<timestamp>_<config>/slurm.log
 # =============================================================================
 
 set -e
+
+# =============================================================================
+# Determine project root dynamically
+# =============================================================================
+# Use SLURM_SUBMIT_DIR if available (directory where sbatch was run),
+# otherwise use the script's directory to find project root
+if [ -n "$SLURM_SUBMIT_DIR" ]; then
+    PROJECT_ROOT="$SLURM_SUBMIT_DIR"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"  # Go up from sbatch/ to v2/
+fi
+
+cd "$PROJECT_ROOT"
+echo "[INFO] Project root: $PROJECT_ROOT"
 
 # Parse arguments
 LIMIT_ARG=""
@@ -66,20 +81,19 @@ else
     echo "[INFO] Limiting evaluation to $NUM_SAMPLES samples"
 fi
 
-# Change to project directory
-cd ~/scratch/Fast-dLLM/v2
-
 # Ensure base logs directory exists
 mkdir -p "logs"
 
 # Setup and activate virtual environment in $TMPDIR (fast local storage)
-source ./setup_tmpdir_venv.sh
+if [ -f "./setup_tmpdir_venv.sh" ]; then
+    source ./setup_tmpdir_venv.sh
+fi
 
 # Environment setup
 export HF_ALLOW_CODE_EVAL=1
 export HF_DATASETS_TRUST_REMOTE_CODE=true
-export HF_HOME=~/scratch/.cache/huggingface
-export TORCH_HOME=~/scratch/.cache/torch
+# Note: Cache directories (HF_HOME, TORCH_HOME) inherit from user environment.
+# Set XDG_CACHE_HOME in ~/.bashrc to redirect caches (e.g., to ~/scratch/.cache)
 
 # Deterministic results
 export CUBLAS_WORKSPACE_CONFIG=":16:8"

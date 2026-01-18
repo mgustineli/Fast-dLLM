@@ -30,6 +30,21 @@
 
 set -e
 
+# =============================================================================
+# Determine project root dynamically
+# =============================================================================
+# Use SLURM_SUBMIT_DIR if available (directory where sbatch was run),
+# otherwise use the script's directory to find project root
+if [ -n "$SLURM_SUBMIT_DIR" ]; then
+    PROJECT_ROOT="$SLURM_SUBMIT_DIR"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"  # Go up from sbatch/ to v2/
+fi
+
+cd "$PROJECT_ROOT"
+echo "[INFO] Project root: $PROJECT_ROOT"
+
 # Parse arguments
 LIMIT_ARG=""
 NUM_SAMPLES="all"
@@ -55,20 +70,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Change to project directory
-cd ~/scratch/Fast-dLLM/v2
-
 # Ensure base logs directory exists
 mkdir -p "logs"
 
 # Setup and activate virtual environment in $TMPDIR (fast local storage)
-source ./setup_tmpdir_venv.sh
+if [ -f "./setup_tmpdir_venv.sh" ]; then
+    source ./setup_tmpdir_venv.sh
+fi
 
 # Environment setup
 export HF_ALLOW_CODE_EVAL=1
 export HF_DATASETS_TRUST_REMOTE_CODE=true
-export HF_HOME=~/scratch/.cache/huggingface
-export TORCH_HOME=~/scratch/.cache/torch
+# Note: Cache directories (HF_HOME, TORCH_HOME) inherit from user environment.
+# Set XDG_CACHE_HOME in ~/.bashrc to redirect caches (e.g., to ~/scratch/.cache)
 
 # Deterministic results
 export CUBLAS_WORKSPACE_CONFIG=":16:8"
