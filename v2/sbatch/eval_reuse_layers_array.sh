@@ -72,8 +72,8 @@ cd ~/scratch/Fast-dLLM/v2
 # Ensure base logs directory exists
 mkdir -p "logs"
 
-# Activate virtual environment (on scratch - persistent across jobs)
-source ~/scratch/Fast-dLLM/.venv/bin/activate
+# Setup and activate virtual environment in $TMPDIR (fast local storage)
+source ./setup_tmpdir_venv.sh
 
 # Environment setup
 export HF_ALLOW_CODE_EVAL=1
