@@ -39,13 +39,14 @@ bash sbatch/run_reuse_experiments.sh --force            # All configs
 
 ## Scripts Reference
 
-| Script | Purpose |
-|--------|---------|
-| `sbatch/run_reuse_experiments.sh` | **Primary workflow** - Smart runner, only runs missing |
-| `sbatch/eval_reuse_single.sh` | Single experiment SLURM job |
-| `sbatch/eval_pace_script.sh` | Baseline evaluation (SLURM) |
-| `sbatch/eval_script.sh` | Local evaluation (no SLURM) |
-| `setup_tmpdir_venv.sh` | Interactive venv setup (TMPDIR) |
+| Script | Purpose | When to Use |
+|--------|---------|-------------|
+| `sbatch/run_reuse_experiments.sh` | Smart runner: only runs missing experiments | **Primary workflow** |
+| `sbatch/eval_reuse_single.sh` | Single SLURM job for one config | Called by runner |
+| `sbatch/eval_pace_script.sh` | Baseline evaluation (multi-task) | Baseline benchmarks |
+| `sbatch/eval_script.sh` | Local evaluation (no SLURM) | Interactive testing |
+| `setup_tmpdir_venv.sh` | Create fast TMPDIR venv | Interactive sessions only |
+| `sbatch/eval_reuse_layers_array.sh` | Array job for layer reuse | **Deprecated** |
 
 ---
 

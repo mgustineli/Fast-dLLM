@@ -39,6 +39,7 @@ How to run Fast-dLLM v2 experiments on the Georgia Tech PACE cluster.
 | `eval_pace_script.sh` | Baseline evaluation (multi-task) | Baseline benchmarks |
 | `eval_script.sh` | Local evaluation (no SLURM) | Interactive testing |
 | `setup_tmpdir_venv.sh` | Create fast TMPDIR venv | Interactive sessions only |
+| `eval_reuse_layers_array.sh` | Array job for layer reuse | **Deprecated** - use `run_reuse_experiments.sh` |
 
 ## Quick Start
 
