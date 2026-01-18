@@ -73,9 +73,19 @@ done
 # Ensure base logs directory exists
 mkdir -p "logs"
 
-# Setup and activate virtual environment in $TMPDIR (fast local storage)
-if [ -f "./setup_tmpdir_venv.sh" ]; then
-    source ./setup_tmpdir_venv.sh
+# Activate existing virtual environment from scratch (persistent, large storage)
+# Setup once with: cd ~/scratch/Fast-dLLM/v2 && uv venv .venv && uv pip install -e . && uv pip install torch
+SCRATCH_VENV="$HOME/scratch/Fast-dLLM/v2/.venv"
+if [ -d "$SCRATCH_VENV" ]; then
+    echo "[INFO] Activating venv from scratch: $SCRATCH_VENV"
+    source "$SCRATCH_VENV/bin/activate"
+elif [ -d "$PROJECT_ROOT/.venv" ]; then
+    echo "[INFO] Activating venv at $PROJECT_ROOT/.venv"
+    source "$PROJECT_ROOT/.venv/bin/activate"
+else
+    echo "[ERROR] No virtual environment found. Create one with:"
+    echo "  cd ~/scratch/Fast-dLLM/v2 && uv venv .venv && uv pip install -e . && uv pip install torch"
+    exit 1
 fi
 
 # Environment setup
