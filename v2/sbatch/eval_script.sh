@@ -2,14 +2,16 @@
 set -e
 
 # =============================================================================
-# Multi-Task Baseline Evaluation
+# Multi-Task Baseline Evaluation (Local)
 # =============================================================================
 # Runs baseline evaluation on multiple benchmarks: MMLU, GPQA, GSM8K,
 # Minerva Math, and IFEval.
 #
 # Usage:
-#   bash sbatch/eval_script.sh              # Run all tasks
-#   bash sbatch/eval_script.sh --limit 10   # Test with 10 samples per task
+#   bash sbatch/eval_script.sh                          # Run all tasks
+#   bash sbatch/eval_script.sh --limit 10               # Test with 10 samples per task
+#   bash sbatch/eval_script.sh --task gsm8k             # Single task
+#   bash sbatch/eval_script.sh --task gsm8k --limit 10  # Single task, 10 samples
 #
 # Results: results/baseline/<task>/<timestamp>_<config>/
 # =============================================================================
@@ -17,6 +19,7 @@ set -e
 # Parse arguments
 LIMIT_ARG=""
 NUM_SAMPLES="all"
+SELECTED_TASK=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -25,17 +28,29 @@ while [[ $# -gt 0 ]]; do
             NUM_SAMPLES=$2
             shift 2
             ;;
+        --task)
+            SELECTED_TASK=$2
+            shift 2
+            ;;
         *)
             echo "Unknown argument: $1"
+            echo "Usage: bash sbatch/eval_script.sh [--task <task>] [--limit <n>]"
+            echo "Available tasks: mmlu, gpqa_main_n_shot, gsm8k, minerva_math, ifeval"
             exit 1
             ;;
     esac
 done
 
-if [ "$NUM_SAMPLES" == "all" ]; then
-    echo "[INFO] Running full evaluation"
+if [ -n "$SELECTED_TASK" ]; then
+    echo "[INFO] Running single task: $SELECTED_TASK"
 else
-    echo "[INFO] Limiting evaluation to $NUM_SAMPLES samples per task"
+    echo "[INFO] Running all tasks"
+fi
+
+if [ "$NUM_SAMPLES" == "all" ]; then
+    echo "[INFO] Full evaluation"
+else
+    echo "[INFO] Limiting to $NUM_SAMPLES samples per task"
 fi
 
 # Environment setup
@@ -51,25 +66,50 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 export RUN_TIMESTAMP=$TIMESTAMP
 
 # Task configurations: task_name|batch_size|num_fewshot|extra_args
+# All tasks use --fewshot_as_multiturn to match original repo
+# Note: batch_size=1 for generation tasks to avoid KV cache dimension issues
 TASKS=(
     "mmlu|1|5|--fewshot_as_multiturn"
     "gpqa_main_n_shot|1|0|--fewshot_as_multiturn"
-    "gsm8k|32|0|"
-    "minerva_math|32|0|"
-    "ifeval|32|0|"
+    "gsm8k|1|0|--fewshot_as_multiturn"
+    "minerva_math|1|0|--fewshot_as_multiturn"
+    "ifeval|1|0|--fewshot_as_multiturn"
 )
+
+# Validate selected task if provided
+if [ -n "$SELECTED_TASK" ]; then
+    VALID_TASK=false
+    for TASK_CONFIG in "${TASKS[@]}"; do
+        IFS='|' read -r TASK _ _ _ <<< "$TASK_CONFIG"
+        if [ "$TASK" == "$SELECTED_TASK" ]; then
+            VALID_TASK=true
+            break
+        fi
+    done
+    if [ "$VALID_TASK" == "false" ]; then
+        echo "[ERROR] Unknown task: $SELECTED_TASK"
+        echo "Available tasks: mmlu, gpqa_main_n_shot, gsm8k, minerva_math, ifeval"
+        exit 1
+    fi
+fi
 
 for TASK_CONFIG in "${TASKS[@]}"; do
     # Parse task configuration
     IFS='|' read -r TASK BATCH_SIZE NUM_FEWSHOT EXTRA_ARGS <<< "$TASK_CONFIG"
 
+    # Skip if a specific task was selected and this isn't it
+    if [ -n "$SELECTED_TASK" ] && [ "$TASK" != "$SELECTED_TASK" ]; then
+        continue
+    fi
+
     # Build config string
     CONFIG="threshold1_n${NUM_SAMPLES}"
     OUTPUT_DIR="results/${EXPERIMENT}/${TASK}/${TIMESTAMP}_${CONFIG}"
 
-    # Export for eval.py logging
+    # Export for eval.py logging and summary.json
     export TASK_NAME=$TASK
     export RUN_TAG=$CONFIG
+    export OUTPUT_DIR=$OUTPUT_DIR
 
     # Create results directory
     mkdir -p "$OUTPUT_DIR"

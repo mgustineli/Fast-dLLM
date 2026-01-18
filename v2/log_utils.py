@@ -43,10 +43,29 @@ def get_gpu_info():
         return info
 
 
+def find_results_file(results_dir):
+    """Find lm_eval results file (handles subdirectory and timestamped names)."""
+    # First, check for results.json directly
+    direct_path = os.path.join(results_dir, "results.json")
+    if os.path.exists(direct_path):
+        return direct_path
+
+    # lm_eval writes to <model_name_sanitized>/results_<timestamp>.json
+    # Look for any subdirectory containing results_*.json
+    for item in os.listdir(results_dir):
+        subdir = os.path.join(results_dir, item)
+        if os.path.isdir(subdir):
+            for filename in os.listdir(subdir):
+                if filename.startswith("results_") and filename.endswith(".json"):
+                    return os.path.join(subdir, filename)
+
+    return None
+
+
 def extract_accuracy(results_dir, task="gsm8k"):
     """Extract accuracy from lm_eval results.json file."""
-    results_path = os.path.join(results_dir, "results.json")
-    if not os.path.exists(results_path):
+    results_path = find_results_file(results_dir)
+    if results_path is None:
         return None
 
     try:

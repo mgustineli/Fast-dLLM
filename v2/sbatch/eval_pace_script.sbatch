@@ -56,19 +56,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Change to project directory
-cd /storage/scratch1/9/mgustineli3/Fast-dLLM/v2
+cd ~/scratch/Fast-dLLM/v2
 
 # Ensure base logs directory exists
 mkdir -p "logs"
 
-# Activate virtual environment
-source ../.venv/bin/activate
+# Activate virtual environment (on scratch - persistent across jobs)
+source ~/scratch/Fast-dLLM/.venv/bin/activate
 
 # Environment setup
 export HF_ALLOW_CODE_EVAL=1
 export HF_DATASETS_TRUST_REMOTE_CODE=true
-export HF_HOME=/storage/scratch1/9/mgustineli3/.cache/huggingface
-export TORCH_HOME=/storage/scratch1/9/mgustineli3/.cache/torch
+export HF_HOME=~/scratch/.cache/huggingface
+export TORCH_HOME=~/scratch/.cache/torch
 
 # Deterministic results
 export CUBLAS_WORKSPACE_CONFIG=":16:8"
@@ -99,12 +99,13 @@ echo "==========================================================================
 
 # Task configurations: task_name|batch_size|num_fewshot|extra_args
 # Note: batch_size=1 for generation tasks to avoid KV cache dimension issues
+# All tasks use --apply_chat_template --fewshot_as_multiturn to match original repo
 declare -A TASK_CONFIGS=(
-    ["mmlu"]="1|5|--fewshot_as_multiturn"
-    ["gpqa_main_n_shot"]="1|0|--fewshot_as_multiturn"
-    ["gsm8k"]="1|0|"
-    ["minerva_math"]="1|0|"
-    ["ifeval"]="1|0|"
+    ["mmlu"]="1|5|--fewshot_as_multiturn --apply_chat_template"
+    ["gpqa_main_n_shot"]="1|0|--fewshot_as_multiturn --apply_chat_template"
+    ["gsm8k"]="1|0|--fewshot_as_multiturn --apply_chat_template"
+    ["minerva_math"]="1|0|--fewshot_as_multiturn --apply_chat_template"
+    ["ifeval"]="1|0|--fewshot_as_multiturn --apply_chat_template"
 )
 
 # Build list of tasks to run
