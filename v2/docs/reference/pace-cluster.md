@@ -2,26 +2,35 @@
 
 Quick reference for Georgia Tech PACE cluster resources.
 
-> **For writing/reviewing sbatch scripts**: See `.claude/commands/SKILLS.md` for comprehensive patterns and checklists.
-
 ## Storage
 
-| Location | Quota | Use For |
-|----------|-------|---------|
-| `~/` | 20 GB | Code, configs |
-| `~/scratch/` | 15 TB | Datasets, venvs, outputs (60-day purge policy) |
-| `/storage/coda1/p-<alloc>/0/shared/` | Varies | Team-shared data |
-| `${TMPDIR}` | ~1 TB | Job-local temp (auto-cleaned) |
+| Location | Quota | Speed | Persistent | Use For |
+|----------|-------|-------|------------|---------|
+| `~/` | 20 GB | Medium | Yes | Code, configs |
+| `~/scratch/` | 15 TB | Slow I/O | Yes* | Venvs, models, outputs |
+| `${TMPDIR}` | ~1 TB | Fast | No | Job-local temp |
+
+*60-day purge policy on scratch
+
+### Recommended Setup
+
+```bash
+# In ~/.bashrc - redirect caches to scratch
+export XDG_CACHE_HOME="$HOME/scratch/.cache"
+```
+
+This automatically redirects HuggingFace, pip, and other caches to scratch.
 
 ## GPU Partitions
 
-| Partition | GPU | VRAM | Availability |
-|-----------|-----|------|--------------|
-| `gpu-rtx6000` | RTX 6000 | 24GB | **Best** (default) |
-| `gpu-v100` | V100 | 16/32GB | Good |
-| `gpu-l40s` | L40S | 48GB | Moderate |
-| `gpu-a100` | A100 | 40/80GB | Limited |
-| `gpu-h100` | H100 | 80GB | Very limited |
+| Partition | GPU | VRAM | Tensor Cores | Best Dtype |
+|-----------|-----|------|--------------|------------|
+| `gpu-rtx6000` | RTX 6000 | 24GB | Turing | **float16** |
+| `gpu-v100` | V100 | 16/32GB | Volta | float16 |
+| `gpu-a100` | A100 | 40/80GB | Ampere | bfloat16 |
+| `gpu-h100` | H100 | 80GB | Hopper | bfloat16 |
+
+**Note**: RTX 6000 (Turing) doesn't support bfloat16. Our `eval.py` auto-detects GPU and uses float16 for Turing GPUs.
 
 ## Quick Commands
 
@@ -34,68 +43,80 @@ pace-check-queue
 
 # Check account balance
 pace-mybalance
+
+# View your jobs
+squeue -u $USER
+
+# Cancel job
+scancel <job_id>
 ```
 
-## Array Jobs
+## Virtual Environment Strategy
 
-Array jobs allow running multiple similar tasks as a single job submission. Each task gets a unique `$SLURM_ARRAY_TASK_ID`.
+### For SLURM Jobs (Automatic)
 
-### Basic Usage
+SLURM scripts automatically create/use `~/scratch/Fast-dLLM/v2/.venv`:
+- Created on first run with file locking (no race conditions)
+- Shared across all jobs (no redundant installs)
+- Persistent across sessions
+
+### For Interactive Sessions
+
+```bash
+# Option 1: Use scratch venv (persistent)
+source ~/scratch/Fast-dLLM/v2/.venv/bin/activate
+
+# Option 2: Fast TMPDIR venv (wiped after session)
+cd ~/eic-lab/Fast-dLLM/v2
+source setup_tmpdir_venv.sh
+```
+
+## Running Experiments
+
+### Smart Experiment Runner (Recommended)
+
+```bash
+cd ~/eic-lab/Fast-dLLM/v2
+
+# Check what's completed vs pending
+bash sbatch/run_reuse_experiments.sh --status
+
+# Run only missing experiments
+bash sbatch/run_reuse_experiments.sh
+
+# Test mode (10 samples)
+bash sbatch/run_reuse_experiments.sh --limit 10
+
+# Force re-run specific config
+bash sbatch/run_reuse_experiments.sh --force k2_middle
+```
+
+### Direct SLURM Submission
+
+```bash
+# Single baseline evaluation
+sbatch sbatch/eval_pace_script.sh --task gsm8k --limit 10
+
+# Array job (deprecated - use run_reuse_experiments.sh instead)
+sbatch sbatch/eval_reuse_layers_array.sh --limit 10
+```
+
+## Array Jobs (Reference)
+
+Array jobs run multiple similar tasks as a single submission.
+
+### Basic Syntax
 
 ```bash
 #SBATCH --array=0-8           # Run 9 tasks (indices 0-8)
-#SBATCH --array=1-5           # Run 5 tasks (indices 1-5)
 #SBATCH --array=1,3,5,7       # Run specific indices only
-#SBATCH --array=0-8%3         # Run max 3 tasks at once (throttling)
+#SBATCH --array=0-8%3         # Max 3 concurrent tasks
 ```
 
-### Output File Naming
-
-Use `%A` (master job ID) and `%a` (task ID) in output file names:
+### Output Naming
 
 ```bash
-#SBATCH --output=logs/job_%A_%a.out
-#SBATCH --error=logs/job_%A_%a.err
-```
-
-### Using Array Task ID
-
-```bash
-# Map task ID to configuration
-CONFIGS=("config1" "config2" "config3")
-MY_CONFIG=${CONFIGS[$SLURM_ARRAY_TASK_ID]}
-
-# Or use task ID directly
-echo "Processing task $SLURM_ARRAY_TASK_ID"
-```
-
-### Example: Layer Reuse Experiments
-
-```bash
-# Submit all 9 experiments (3 subsets x 3 k values)
-sbatch sbatch/eval_reuse_layers_array.sbatch
-
-# Submit with sample limit for testing
-sbatch sbatch/eval_reuse_layers_array.sbatch --limit 10
-
-# Run only specific experiments (e.g., k=1 for all subsets)
-sbatch --array=0,3,6 sbatch/eval_reuse_layers_array.sbatch
-```
-
-### Managing Array Jobs
-
-```bash
-# Check status of array job
-squeue -u $USER
-
-# Cancel entire array job
-scancel <job_id>
-
-# Cancel specific task
-scancel <job_id>_<task_id>
-
-# Modify throttling on running job
-scontrol update ArrayTaskThrottle=5 JobId=<job_id>
+#SBATCH --output=logs/job_%A_%a.out   # %A=master ID, %a=task ID
 ```
 
 ### Key Variables
@@ -105,13 +126,41 @@ scontrol update ArrayTaskThrottle=5 JobId=<job_id>
 | `$SLURM_ARRAY_TASK_ID` | Current task index |
 | `$SLURM_ARRAY_TASK_COUNT` | Total number of tasks |
 | `$SLURM_ARRAY_JOB_ID` | Master job ID |
-| `$SLURM_JOB_ID` | Unique ID for this task |
+
+### Why We Use Individual Jobs Instead
+
+Array jobs have issues on PACE:
+1. Multiple tasks can land on same node, sharing `$TMPDIR`
+2. Race conditions with shared resources
+3. Hard to re-run only failed tasks
+
+Our `run_reuse_experiments.sh` submits individual jobs:
+- Checks completion before submitting
+- Only runs missing experiments
+- Easier to manage and re-run
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| Disk quota exceeded | Move files to scratch, clear `~/.cache/torch` |
-| No module found | Use `uv run`, check `UV_PROJECT_ENVIRONMENT` |
-| Jobs stuck | Try different partition, reduce resources |
-| Array job logs overwrite | Ensure `%A_%a` in output filename, not just `%A` |
+| Disk quota exceeded | Move to scratch, clear `~/.cache` |
+| Jobs stuck at venv setup | Delete `~/scratch/Fast-dLLM/v2/.venv`, retry |
+| I/O errors on scratch | Known PACE issue; retry or reduce concurrent jobs |
+| Wrong dtype (slow) | Check GPU with `nvidia-smi`; eval.py auto-detects |
+| Array tasks conflict | Use `run_reuse_experiments.sh` instead |
+
+## Useful SLURM Commands
+
+```bash
+# Detailed job info
+scontrol show job <job_id>
+
+# Job history
+sacct -u $USER --starttime=today
+
+# Cancel all your jobs
+scancel -u $USER
+
+# Check node availability
+sinfo -p gpu-rtx6000
+```

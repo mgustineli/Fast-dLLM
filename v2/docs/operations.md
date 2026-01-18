@@ -1,83 +1,174 @@
 # Operations Guide
 
-Operational patterns for running Fast-dLLM v2 experiments on the Georgia Tech PACE cluster.
+How to run Fast-dLLM v2 experiments on the Georgia Tech PACE cluster.
 
 > **Prerequisites**: See [PACE Cluster Reference](reference/pace-cluster.md) for disk quotas, SLURM queues, and troubleshooting.
 
 ## Directory Structure
 
 ```
-~/scratch/Fast-dLLM/v2/
-├── app.py                    # Gradio web interface
-├── run_chatbot.py           # CLI chatbot
-├── eval.py                  # Evaluation harness
-├── eval_gsm8k.sh            # GSM8K evaluation script
-├── eval_gsm8k_reuse_layers.sh   # Layer reuse experiments
-├── eval_gsm8k_reuse_activations.sh  # Activation reuse experiments
-├── generation_functions.py  # Core generation algorithms
-├── configs/                 # Model configurations
-├── data/                    # Training datasets
-├── results/                 # Experiment outputs
-│   └── YYYYMMDD_HHMMSS/    # Timestamped results
-├── src/
-│   └── lmflow/             # LMFlow training framework
-└── train_scripts/          # Fine-tuning scripts
-    └── finetune_alpaca.sh
+~/eic-lab/Fast-dLLM/v2/          # Code repository (can be anywhere)
+├── eval.py                       # Evaluation harness (lm_eval integration)
+├── generation_functions.py       # Core generation algorithms
+├── app.py                        # Gradio web interface
+├── run_chatbot.py               # CLI chatbot
+├── sbatch/                       # SLURM job scripts
+│   ├── run_reuse_experiments.sh  # Smart experiment runner
+│   ├── eval_reuse_single.sh      # Single experiment job
+│   ├── eval_reuse_layers_array.sh # Array job (deprecated)
+│   ├── eval_pace_script.sh       # Baseline evaluation
+│   └── eval_script.sh            # Local evaluation
+├── setup_tmpdir_venv.sh          # Interactive venv setup
+├── results/                      # Experiment outputs
+│   └── reuse_layers/gsm8k/
+│       ├── k1_first/             # Config-named directories
+│       ├── k2_middle/
+│       └── ...
+└── logs/                         # SLURM logs
+
+~/scratch/Fast-dLLM/v2/           # Persistent storage (auto-created)
+└── .venv/                        # Shared venv for SLURM jobs
 ```
+
+## Scripts Overview
+
+| Script | Purpose | When to Use |
+|--------|---------|-------------|
+| `run_reuse_experiments.sh` | Smart runner: only runs missing experiments | **Primary workflow** |
+| `eval_reuse_single.sh` | Single SLURM job for one config | Called by runner |
+| `eval_pace_script.sh` | Baseline evaluation (multi-task) | Baseline benchmarks |
+| `eval_script.sh` | Local evaluation (no SLURM) | Interactive testing |
+| `setup_tmpdir_venv.sh` | Create fast TMPDIR venv | Interactive sessions only |
 
 ## Quick Start
 
+### 1. Check Experiment Status
+
 ```bash
-# One-time setup
-cd ~/scratch/Fast-dLLM/v2
-pip install -e .
+cd ~/eic-lab/Fast-dLLM/v2
+bash sbatch/run_reuse_experiments.sh --status
+```
 
-# Set environment variables
-export HF_ALLOW_CODE_EVAL=1
-export HF_DATASETS_TRUST_REMOTE_CODE=true
+Output:
+```
+=============================================================================
+Experiment Status: reuse_layers / gsm8k
+=============================================================================
+  ✓ k1_first
+  ✓ k1_middle
+  ✗ k2_first (pending)
+  ✗ k2_middle (pending)
+  ...
+=============================================================================
+Completed: 2 / 9
+=============================================================================
+```
 
-# Run evaluation
-bash eval_gsm8k.sh --limit 10  # Test mode
-bash eval_gsm8k.sh             # Full evaluation
+### 2. Run Missing Experiments
+
+```bash
+# Preview what would run (no submission)
+bash sbatch/run_reuse_experiments.sh --dry-run
+
+# Submit only missing experiments
+bash sbatch/run_reuse_experiments.sh
+
+# Test mode (10 samples per experiment)
+bash sbatch/run_reuse_experiments.sh --limit 10
+```
+
+### 3. Monitor Progress
+
+```bash
+# Check SLURM queue
+squeue -u $USER
+
+# Check experiment status
+bash sbatch/run_reuse_experiments.sh --status
+
+# View logs
+tail -f logs/reuse_layers/gsm8k/k2_middle/slurm_*.log
 ```
 
 ## Environment Setup
 
-### Required Environment Variables
+### Automatic (SLURM Jobs)
+
+SLURM scripts automatically:
+1. Create `~/scratch/Fast-dLLM/v2/.venv` if missing (first run only)
+2. Activate the venv
+3. Use file locking to prevent race conditions
+
+No manual setup required.
+
+### Manual (Interactive Sessions)
+
+For Jupyter/interactive work:
 
 ```bash
-# Add to ~/.bashrc or set before running
+# Option 1: Use scratch venv (persistent, slower I/O)
+source ~/scratch/Fast-dLLM/v2/.venv/bin/activate
+
+# Option 2: Create fast TMPDIR venv (wiped after session)
+cd ~/eic-lab/Fast-dLLM/v2
+source setup_tmpdir_venv.sh
+```
+
+### Environment Variables
+
+Set in `~/.bashrc`:
+
+```bash
+# Redirect caches to scratch (large storage)
+export XDG_CACHE_HOME="$HOME/scratch/.cache"
+
+# Required for lm_eval
 export HF_ALLOW_CODE_EVAL=1
 export HF_DATASETS_TRUST_REMOTE_CODE=true
-
-# Optional: Set cache directories to scratch
-export HF_HOME=~/scratch/.cache/huggingface
-export TORCH_HOME=~/scratch/.cache/torch
 ```
 
-### Installing Dependencies
+## Running Experiments
+
+### Layer Reuse Experiments (Primary)
 
 ```bash
-# From the v2 directory
-pip install -e .
+# Check status
+bash sbatch/run_reuse_experiments.sh --status
 
-# Or install requirements directly
-pip install -r requirements.txt
+# Run missing experiments
+bash sbatch/run_reuse_experiments.sh
+
+# Run with test mode (10 samples)
+bash sbatch/run_reuse_experiments.sh --limit 10
+
+# Force re-run specific config
+bash sbatch/run_reuse_experiments.sh --force k2_middle
+
+# Force re-run all
+bash sbatch/run_reuse_experiments.sh --force
+
+# Different task (default: gsm8k)
+bash sbatch/run_reuse_experiments.sh --task mmlu
 ```
 
-## Running Evaluations
-
-### GSM8K Evaluation
+### Baseline Evaluation
 
 ```bash
-# Full evaluation (all samples)
-bash eval_gsm8k.sh
+# Single task
+sbatch sbatch/eval_pace_script.sh --task gsm8k
 
-# Test mode (limited samples)
-bash eval_gsm8k.sh --limit 10
+# All tasks (mmlu, gpqa, gsm8k, minerva_math, ifeval)
+sbatch sbatch/eval_pace_script.sh
 
-# With custom batch size
-bash eval_gsm8k.sh --limit 100 --batch_size 4
+# Test mode
+sbatch sbatch/eval_pace_script.sh --task gsm8k --limit 10
+```
+
+### Local Evaluation (No SLURM)
+
+```bash
+# From v2 directory
+bash sbatch/eval_script.sh --task gsm8k --limit 10
 ```
 
 ### Custom Evaluation
@@ -88,115 +179,63 @@ accelerate launch eval.py \
     --batch_size 1 \
     --num_fewshot 0 \
     --model fast_dllm_v2 \
-    --model_args model_path=Efficient-Large-Model/Fast_dLLM_v2_7B,threshold=0.9,show_speed=True \
+    --apply_chat_template \
+    --fewshot_as_multiturn \
+    --model_args "model_path=Efficient-Large-Model/Fast_dLLM_v2_7B,threshold=1,show_speed=True" \
     --output_path results/my_experiment/
 ```
 
-### Model Arguments
+## Model Arguments
 
 | Argument | Values | Description |
 |----------|--------|-------------|
 | `model_path` | HuggingFace path | Model to load |
 | `threshold` | 0.0-1.0 | Confidence threshold for parallel decoding |
-| `use_cache` | True/False | Enable KV caching |
-| `dual_cache` | True/False | Enable dual caching |
+| `use_block_cache` | True/False | Enable block-level KV caching |
 | `show_speed` | True/False | Display throughput metrics |
-| `k` | 1,2,3 | Layer reuse parameter |
+| `reuse_k` | 1,2,3 | Layer reuse parameter (skip every k-th step) |
+| `layer_subset` | first/middle/last | Which 12 layers to apply reuse |
+
+## Results Structure
+
+```
+results/reuse_layers/gsm8k/
+├── k1_first/
+│   ├── results.json         # Metrics (accuracy, etc.)
+│   ├── summary.json         # Throughput, config
+│   └── slurm.log           # Job log
+├── k2_middle/
+│   └── ...
+└── k3_last/
+    └── ...
+```
 
 ## Interactive Usage
 
 ### Gradio Web UI
 
 ```bash
+# Activate venv first
+source ~/scratch/Fast-dLLM/v2/.venv/bin/activate
 python app.py
 # Opens at http://localhost:10086
 ```
 
-Features:
-- Real-time denoising visualization
-- Adjustable parameters (block size, temperature, threshold)
-- Performance metrics display
-
 ### CLI Chatbot
 
 ```bash
+source ~/scratch/Fast-dLLM/v2/.venv/bin/activate
 python run_chatbot.py
-```
-
-Commands:
-- Type message + Enter to chat
-- `clear` - Clear conversation history
-- `exit` - Quit
-
-## Training
-
-### Fine-tuning on Alpaca
-
-```bash
-# Download training data
-cd data && bash download.sh alpaca && cd ..
-
-# Run fine-tuning
-bash train_scripts/finetune_alpaca.sh
-```
-
-## Experiment Workflow
-
-1. **Setup**: Ensure environment variables are set
-2. **Baseline**: Run `bash eval_gsm8k.sh --limit 10` to verify setup
-3. **Experiment**: Modify model args for your experiment
-4. **Run**: Execute evaluation script
-5. **Results**: Check `results/TIMESTAMP/` for outputs
-
-## Results Directory Structure
-
-```
-results/
-└── 20260117_120000/
-    └── gsm8k_threshold1_run_raw/
-        ├── results.json          # Metrics and scores
-        └── samples_*.jsonl       # Individual predictions
-```
-
-## Layer Reuse Experiments
-
-```bash
-# Run layer reuse evaluation
-bash eval_gsm8k_reuse_layers.sh
-
-# Test specific k values
-accelerate launch eval.py \
-    --model fast_dllm_v2 \
-    --model_args model_path=...,k=2
-```
-
-## SBATCH Integration
-
-For running on PACE cluster with SLURM:
-
-```bash
-#!/bin/bash
-#SBATCH --job-name=fast-dllm-eval
-#SBATCH -N1 -n1 --gres=gpu:1
-#SBATCH --mem=32G
-#SBATCH -t 120
-#SBATCH -q embers
-#SBATCH --output=logs/%j.out
-
-cd ~/scratch/Fast-dLLM/v2
-export HF_ALLOW_CODE_EVAL=1
-export HF_DATASETS_TRUST_REMOTE_CODE=true
-
-bash eval_gsm8k.sh
 ```
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| CUDA OOM | Reduce batch size, use `--batch_size 1` |
-| Model not found | Check `model_path` in model_args |
-| Slow download | Set `HF_HOME` to scratch directory |
-| Permission denied | Check file permissions in scratch |
+| Jobs stuck at venv setup | Check `~/scratch/Fast-dLLM/v2/.venv` exists; delete and retry |
+| CUDA OOM | Use `--batch_size 1` (default) |
+| I/O errors on scratch | Known PACE issue; retry or use TMPDIR for interactive |
+| Missing experiments | Run `bash sbatch/run_reuse_experiments.sh` to submit missing |
+| Re-run specific config | Use `--force k2_middle` flag |
 
 See [PACE Cluster Reference](reference/pace-cluster.md) for more troubleshooting.

@@ -6,23 +6,30 @@
 
 Fast-dLLM v2 adapts pretrained autoregressive models (Qwen2.5) into parallel text generation via block diffusion, targeting 2.5x+ speedup with ~1B tokens of fine-tuning.
 
-## Current Phase: GPU Precision Optimization
+## Current Phase: Layer Reuse Experiments
 
-### Recent Fix: Auto-Dtype Detection
+Running experiments to measure speedup vs accuracy tradeoff for layer reuse (k=1,2,3 × first/middle/last subsets).
 
-Resolved 6x performance gap between Ampere (A40) and Turing (RTX 6000) GPUs:
+## Recent Changes
 
-| GPU | Architecture | Old Dtype | New Dtype | Tokens/s |
-|-----|--------------|-----------|-----------|----------|
-| A40 | Ampere (SM 8.0) | bfloat16 | bfloat16 | ~29 |
-| RTX 6000 | Turing (SM 7.5) | bfloat16 (broken) | float16 | TBD |
+### GPU Precision Auto-Detection
+Fixed 6x performance gap between Ampere and Turing GPUs:
 
-**Root Cause**: bfloat16 requires Ampere+. Turing GPUs fell back to FP32, bypassing Tensor Cores.
+| GPU | Architecture | Dtype | Status |
+|-----|--------------|-------|--------|
+| A40 | Ampere (SM 8.0) | bfloat16 | ✓ Working |
+| RTX 6000 | Turing (SM 7.5) | float16 | ✓ Fixed |
 
-**Fix**: `get_optimal_dtype()` in `eval.py` auto-detects GPU compute capability and selects:
-- SM 8.0+: bfloat16 (native support)
-- SM 7.0-7.5: float16 (Tensor Core support)
-- Older: float32
+**Fix**: `get_optimal_dtype()` in `eval.py` auto-detects GPU compute capability.
+
+### Smart Experiment Runner
+New workflow avoids re-running completed experiments:
+
+```bash
+bash sbatch/run_reuse_experiments.sh --status   # Check completion
+bash sbatch/run_reuse_experiments.sh            # Run only missing
+bash sbatch/run_reuse_experiments.sh --force    # Re-run all
+```
 
 ## Key Results
 
@@ -32,25 +39,28 @@ Resolved 6x performance gap between Ampere (A40) and Turing (RTX 6000) GPUs:
 | GSM8K Accuracy | 83.7% |
 | HumanEval | 63.4% |
 
+## Active Experiments
+
+| Config | Status | Accuracy | Throughput |
+|--------|--------|----------|------------|
+| k1_first | Pending | - | - |
+| k1_middle | Pending | - | - |
+| k1_last | Pending | - | - |
+| k2_first | Pending | - | - |
+| k2_middle | Pending | - | - |
+| k2_last | Pending | - | - |
+| k3_first | Pending | - | - |
+| k3_middle | Pending | - | - |
+| k3_last | Pending | - | - |
+
 ## Next Steps
 
-1. **[Pending]** Validate RTX 6000 throughput with float16 fix
-2. **[Pending]** Layer reuse experiments (k=1,2,3 × first/middle/last)
+1. **[Active]** Complete layer reuse experiments (9 configs)
+2. **[Planned]** Analyze speedup vs accuracy tradeoff
 3. **[Planned]** TRIM logic implementation
-4. **[Planned]** Activation reuse profiling
-
-## Active Research
-
-| Feature | Status |
-|---------|--------|
-| Block Diffusion | Working |
-| KV Cache (block + sub-block) | Working |
-| Confidence Decoding | Working |
-| Layer Reuse (k param) | Testing |
-| TRIM Logic | Planned |
 
 ## Quick Links
 
-- [Concepts](concepts/)
-- [Operations](operations.md)
-- [PACE Reference](reference/pace-cluster.md)
+- [Operations Guide](operations.md) - How to run experiments
+- [PACE Reference](reference/pace-cluster.md) - Cluster resources
+- [Concepts](concepts/) - Research ideas
