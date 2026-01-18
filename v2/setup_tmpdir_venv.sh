@@ -41,16 +41,17 @@ else
 fi
 
 # Create symlink from repo root to the venv in TMPDIR
+# Note: Symlink creation is skipped for SLURM array jobs to avoid race conditions
 SYMLINK_PATH="$REPO_ROOT/.venv"
-if [ -L "$SYMLINK_PATH" ]; then
-    # Remove existing symlink
-    rm "$SYMLINK_PATH"
-fi
-if [ -d "$SYMLINK_PATH" ]; then
+if [ -n "$SLURM_ARRAY_TASK_ID" ]; then
+    echo "[INFO] SLURM array job detected, skipping symlink creation"
+elif [ -d "$SYMLINK_PATH" ] && [ ! -L "$SYMLINK_PATH" ]; then
     echo "[WARN] $SYMLINK_PATH is a real directory, skipping symlink"
 else
+    # Remove existing symlink if present (-f to ignore if missing)
+    rm -f "$SYMLINK_PATH" 2>/dev/null || true
     echo "[INFO] Creating symlink: $SYMLINK_PATH -> $VENV_PATH"
-    ln -s "$VENV_PATH" "$SYMLINK_PATH"
+    ln -sf "$VENV_PATH" "$SYMLINK_PATH"
 fi
 
 # Activate the venv
@@ -69,11 +70,5 @@ echo ""
 echo "============================================================================="
 echo "Virtual environment ready!"
 echo "Location: $VENV_PATH"
-echo "Symlink: $SYMLINK_PATH -> $VENV_PATH"
 echo "Python: $(which python)"
 echo "============================================================================="
-echo ""
-echo "To activate in future shells:"
-echo "  source $REPO_ROOT/.venv/bin/activate"
-echo "  # or"
-echo "  source $VENV_PATH/bin/activate"
