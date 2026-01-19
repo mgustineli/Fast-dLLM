@@ -91,15 +91,13 @@ done
 # Function to check if experiment completed successfully
 is_completed() {
     local config=$1
-    local results_dir="$RESULTS_BASE/$config"
+    local summary_file="$RESULTS_BASE/$config/summary.json"
 
-    # Check if results.json exists and contains valid results
-    if [ -f "$results_dir/results.json" ]; then
-        # Check if the file has actual results (not empty/error)
-        if grep -q "\"acc\"" "$results_dir/results.json" 2>/dev/null; then
-            return 0  # Completed
-        fi
+    # Check if summary.json exists - this indicates successful completion
+    if [[ -f "$summary_file" ]]; then
+        return 0  # Completed
     fi
+
     return 1  # Not completed
 }
 
@@ -110,15 +108,20 @@ if [ "$SHOW_STATUS" = true ]; then
     echo "============================================================================="
     completed=0
     pending=0
+    lines=()
     for config in "${!CONFIGS[@]}"; do
         if is_completed "$config"; then
-            echo "  ✓ $config"
-            ((completed++))
+            lines+=("  ✓ $config")
+            ((completed++)) || true
         else
-            echo "  ✗ $config (pending)"
-            ((pending++))
+            lines+=("  ✗ $config (pending)")
+            ((pending++)) || true
         fi
-    done | sort
+    done
+
+    # Sort and print the collected lines
+    printf '%s\n' "${lines[@]}" | sort
+
     echo "============================================================================="
     echo "Completed: $completed / ${#CONFIGS[@]}"
     echo "============================================================================="
