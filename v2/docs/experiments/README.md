@@ -7,6 +7,9 @@ Documentation for Fast-dLLM v2 experiments and evaluation scripts.
 ```bash
 cd ~/eic-lab/Fast-dLLM/v2
 
+# Show all options, tasks, configs, and examples
+bash sbatch/run.sh --help
+
 # Check experiment status (default: 00_baseline)
 bash sbatch/run.sh --status
 

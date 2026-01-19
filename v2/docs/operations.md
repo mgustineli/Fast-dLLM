@@ -47,10 +47,18 @@ How to run Fast-dLLM v2 experiments on the Georgia Tech PACE cluster.
 
 ## Quick Start
 
-### 1. Check Experiment Status
+### 0. Get Help
 
 ```bash
 cd ~/eic-lab/Fast-dLLM/v2
+bash sbatch/run.sh --help
+```
+
+Shows all available options, tasks, configs, and usage examples.
+
+### 1. Check Experiment Status
+
+```bash
 bash sbatch/run.sh --status
 ```
 

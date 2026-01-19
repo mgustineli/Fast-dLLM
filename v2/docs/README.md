@@ -17,9 +17,14 @@ Fast-dLLM v2 research project documentation.
 
 ## Running Experiments
 
-### Check Status
+### Get Help
 ```bash
 cd ~/eic-lab/Fast-dLLM/v2
+bash sbatch/run.sh --help    # Show all options, tasks, configs, examples
+```
+
+### Check Status
+```bash
 bash sbatch/run.sh --status
 ```
 
