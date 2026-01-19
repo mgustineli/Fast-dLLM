@@ -9,7 +9,12 @@ How to run Fast-dLLM v2 experiments on the Georgia Tech PACE cluster.
 ```
 ~/eic-lab/Fast-dLLM/v2/          # Code repository (can be anywhere)
 ├── eval.py                       # Evaluation harness (lm_eval integration)
-├── generation_functions.py       # Core generation algorithms
+├── generation_functions.py       # Core generation algorithms (active/dev)
+├── experiments/                  # Versioned generation code per experiment
+│   ├── 00_baseline/
+│   │   └── generation_functions.py  # Frozen baseline code
+│   └── 01_adaptive_skip/
+│       └── generation_functions.py  # Modified experiment code
 ├── app.py                        # Gradio web interface
 ├── run_chatbot.py               # CLI chatbot
 ├── sbatch/                       # SLURM job scripts
@@ -19,11 +24,10 @@ How to run Fast-dLLM v2 experiments on the Georgia Tech PACE cluster.
 │   ├── _job.sh                   # Single experiment job (internal)
 │   └── _array.sh                 # Array job (deprecated)
 ├── setup_tmpdir_venv.sh          # Interactive venv setup
-├── results/                      # Experiment outputs
-│   └── reuse_layers/gsm8k/
-│       ├── k1_first/             # Config-named directories
-│       ├── k2_middle/
-│       └── ...
+├── results/                      # Experiment outputs (not tracked)
+│   └── {experiment}/{task}/{config}/
+├── artifacts/                    # Git-tracked results summaries
+│   └── {experiment}/{task}/{config}/summary.json
 └── logs/                         # SLURM logs
 
 ~/scratch/Fast-dLLM/v2/           # Persistent storage (auto-created)
@@ -53,7 +57,7 @@ bash sbatch/run.sh --status
 Output:
 ```
 =============================================================================
-Experiment Status: reuse_layers / gsm8k
+Experiment Status: 00_baseline / gsm8k
 =============================================================================
   ✓ k1_first
   ✓ k1_middle
@@ -88,7 +92,7 @@ squeue -u $USER
 bash sbatch/run.sh --status
 
 # View logs
-tail -f logs/reuse_layers/gsm8k/k2_middle/slurm_*.log
+tail -f logs/00_baseline/gsm8k/k2_middle/slurm_*.log
 ```
 
 ## Environment Setup
@@ -133,7 +137,7 @@ export HF_DATASETS_TRUST_REMOTE_CODE=true
 ### Layer Reuse Experiments (Primary)
 
 ```bash
-# Check status
+# Check status (default: 00_baseline experiment)
 bash sbatch/run.sh --status
 
 # Run missing experiments
@@ -150,6 +154,10 @@ bash sbatch/run.sh --force
 
 # Different task (default: gsm8k)
 bash sbatch/run.sh --task mmlu
+
+# Different experiment (loads code from experiments/{name}/)
+bash sbatch/run.sh --experiment 01_adaptive_skip
+bash sbatch/run.sh --experiment 01_adaptive_skip --limit 10
 ```
 
 ### Baseline Evaluation
@@ -196,19 +204,27 @@ accelerate launch eval.py \
 | `show_speed` | True/False | Display throughput metrics |
 | `reuse_k` | 1,2,3 | Layer reuse parameter (skip every k-th step) |
 | `layer_subset` | first/middle/last | Which 12 layers to apply reuse |
+| `experiment_name` | string | Load generation code from `experiments/{name}/` |
 
 ## Results Structure
 
 ```
-results/reuse_layers/gsm8k/
+results/{experiment}/{task}/          # Full results (not git-tracked)
 ├── k1_first/
-│   ├── results.json         # Metrics (accuracy, etc.)
-│   ├── summary.json         # Throughput, config
-│   └── slurm.log           # Job log
+│   ├── results.json                  # Metrics (accuracy, etc.)
+│   └── summary.json                  # Throughput, config
 ├── k2_middle/
 │   └── ...
 └── k3_last/
     └── ...
+
+artifacts/{experiment}/{task}/        # Git-tracked summaries
+├── k1_first/
+│   └── summary.json
+└── ...
+
+experiments/{experiment}/             # Versioned generation code
+└── generation_functions.py           # Frozen code for reproducibility
 ```
 
 ## Interactive Usage

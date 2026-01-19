@@ -25,8 +25,9 @@ bash sbatch/run.sh --status
 
 ### Run Missing Experiments
 ```bash
-bash sbatch/run.sh           # Run missing only
-bash sbatch/run.sh --limit 10  # Test mode
+bash sbatch/run.sh                        # Run missing only (00_baseline)
+bash sbatch/run.sh --limit 10             # Test mode
+bash sbatch/run.sh --experiment 01_new    # Different experiment
 ```
 
 ### Force Re-run
@@ -53,14 +54,24 @@ bash sbatch/run.sh --force            # All configs
 ## Directory Structure
 
 ```
-docs/
-├── STATUS.md           # Current state and experiments
-├── operations.md       # How to run experiments
-├── concepts/           # Research ideas
-├── experiments/        # Experiment results
-├── reference/
-│   └── pace-cluster.md # PACE cluster reference
-└── _templates/         # Document templates
+v2/
+├── generation_functions.py    # Core generation algorithms (active/dev)
+├── experiments/               # Versioned generation code per experiment
+│   ├── 00_baseline/
+│   │   └── generation_functions.py
+│   └── 01_adaptive_skip/
+│       └── generation_functions.py
+├── results/                   # Experiment outputs
+│   └── {experiment}/{task}/{config}/
+├── artifacts/                 # Git-tracked summaries
+│   └── {experiment}/{task}/{config}/summary.json
+└── docs/
+    ├── STATUS.md              # Current state and experiments
+    ├── operations.md          # How to run experiments
+    ├── concepts/              # Research ideas
+    ├── experiments/           # Experiment documentation
+    ├── reference/             # Cluster reference
+    └── _templates/            # Document templates
 ```
 
 ---
@@ -73,6 +84,7 @@ docs/
 | Confidence Decoding | `threshold=0.9` | Unmask high-confidence tokens together |
 | Layer Reuse | `reuse_k=2` | Skip layers every k-th diffusion step |
 | Layer Subset | `layer_subset=middle` | Which 12 layers to apply reuse |
+| Experiment Version | `experiment_name=01_new` | Load generation code from `experiments/{name}/` |
 
 ---
 

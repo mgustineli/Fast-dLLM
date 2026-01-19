@@ -28,6 +28,7 @@ import types
 import random
 import numpy as np
 import torch.nn.functional as F
+import importlib.util
 import generation_functions
 from datasets import Dataset
 from datetime import datetime
@@ -70,6 +71,28 @@ def set_seed(seed):
 
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+
+def load_generation_module(experiment_name=None):
+    """Load generation_functions from experiment directory or default."""
+    if experiment_name and experiment_name != "00_baseline":
+        module_path = os.path.join(
+            os.path.dirname(__file__),
+            "experiments",
+            experiment_name,
+            "generation_functions.py"
+        )
+        if os.path.exists(module_path):
+            spec = importlib.util.spec_from_file_location("generation_functions", module_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            print(f"[INFO] Loaded generation_functions from experiments/{experiment_name}/")
+            return module
+        else:
+            print(f"[WARN] Experiment module not found: {module_path}, using default")
+
+    import generation_functions
+    return generation_functions
 
 
 def get_optimal_dtype():
@@ -125,6 +148,7 @@ class Fast_dLLM_v2EvalHarness(LM):
         threshold=0.9,
         reuse_k=1,
         layer_subset=None,
+        experiment_name=None,
         **kwargs,
     ):
         super().__init__()
@@ -154,8 +178,11 @@ class Fast_dLLM_v2EvalHarness(LM):
         )
         self.model.eval()
 
+        # Load appropriate generation module based on experiment
+        gen_module = load_generation_module(experiment_name)
+
         self.model.mdm_sample = types.MethodType(
-            generation_functions.Fast_dLLM_QwenForCausalLM.batch_sample, self.model
+            gen_module.Fast_dLLM_QwenForCausalLM.batch_sample, self.model
         )
 
         self.device = torch.device(device)

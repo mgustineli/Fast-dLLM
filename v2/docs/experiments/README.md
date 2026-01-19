@@ -7,7 +7,7 @@ Documentation for Fast-dLLM v2 experiments and evaluation scripts.
 ```bash
 cd ~/eic-lab/Fast-dLLM/v2
 
-# Check experiment status
+# Check experiment status (default: 00_baseline)
 bash sbatch/run.sh --status
 
 # Run missing experiments (test mode)
@@ -15,6 +15,9 @@ bash sbatch/run.sh --limit 10
 
 # Run missing experiments (full)
 bash sbatch/run.sh
+
+# Run a different experiment version
+bash sbatch/run.sh --experiment 01_adaptive_skip
 ```
 
 ---
@@ -24,19 +27,32 @@ bash sbatch/run.sh
 Results are stored by **config name** (not timestamp) for easy completion detection:
 
 ```
-results/
-├── reuse_layers/                    # Experiment type
-│   └── gsm8k/                       # Task
-│       ├── k1_first/                # Config name
-│       │   ├── results.json         # Metrics and scores
-│       │   ├── summary.json         # Throughput, config info
-│       │   └── slurm.log            # Job log
+results/                              # Full results (not git-tracked)
+├── 00_baseline/                      # Experiment name
+│   └── gsm8k/                        # Task
+│       ├── k1_first/                 # Config name
+│       │   ├── results.json          # Metrics and scores
+│       │   └── summary.json          # Throughput, config info
 │       ├── k1_middle/
-│       ├── k2_first/
 │       └── ...
-└── baseline/
+└── 01_adaptive_skip/
     └── gsm8k/
-        └── threshold1/
+        └── ...
+
+artifacts/                            # Git-tracked summaries
+├── 00_baseline/
+│   └── gsm8k/
+│       ├── k1_first/
+│       │   └── summary.json
+│       └── ...
+└── 01_adaptive_skip/
+    └── ...
+
+experiments/                          # Versioned generation code
+├── 00_baseline/
+│   └── generation_functions.py       # Frozen baseline code
+└── 01_adaptive_skip/
+    └── generation_functions.py       # Modified experiment code
 ```
 
 ---
@@ -94,7 +110,7 @@ bash sbatch/run.sh --force k2_middle
 
 ```
 =============================================================================
-Experiment Status: reuse_layers / gsm8k
+Experiment Status: 00_baseline / gsm8k
 =============================================================================
   ✓ k1_first
   ✓ k1_middle
@@ -165,9 +181,10 @@ squeue -u $USER
 
 # Check experiment completion
 bash sbatch/run.sh --status
+bash sbatch/run.sh --status --experiment 01_adaptive_skip
 
 # View live logs
-tail -f logs/reuse_layers/gsm8k/k2_middle/slurm_*.log
+tail -f logs/00_baseline/gsm8k/k2_middle/slurm_*.log
 
 # Cancel a job
 scancel <job_id>
@@ -217,10 +234,34 @@ scancel -u $USER
 
 The smart runner (`run.sh`) checks for completion by:
 
-1. Looking for `results/<experiment>/<task>/<config>/results.json`
-2. Verifying the file contains `"acc"` (valid accuracy result)
+1. Looking for `results/<experiment>/<task>/<config>/summary.json`
+2. If the file exists, the experiment is considered complete
 
 This allows:
 - Re-running only failed/incomplete experiments
 - Easy tracking of progress with `--status`
 - Forcing re-runs with `--force`
+
+## Creating New Experiments
+
+To create a new experiment with modified generation code:
+
+```bash
+# 1. Create experiment directory
+mkdir -p experiments/01_adaptive_skip
+
+# 2. Copy and modify generation_functions.py
+cp generation_functions.py experiments/01_adaptive_skip/
+
+# 3. Edit the experiment code
+# vim experiments/01_adaptive_skip/generation_functions.py
+
+# 4. Run the experiment
+bash sbatch/run.sh --experiment 01_adaptive_skip --limit 10  # Test first
+bash sbatch/run.sh --experiment 01_adaptive_skip             # Full run
+```
+
+The `--experiment` flag:
+- Loads `generation_functions.py` from `experiments/{name}/`
+- Stores results in `results/{name}/{task}/{config}/`
+- Copies `summary.json` to `artifacts/{name}/{task}/{config}/`

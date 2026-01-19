@@ -102,7 +102,7 @@ accelerate launch eval.py \
     --num_fewshot 0 \
     --fewshot_as_multiturn \
     --apply_chat_template \
-    --model_args "model_path=${MODEL_PATH},reuse_k=${REUSE_K},layer_subset=${LAYER_SUBSET},use_block_cache=True,show_speed=True" \
+    --model_args "model_path=${MODEL_PATH},reuse_k=${REUSE_K},layer_subset=${LAYER_SUBSET},use_block_cache=True,show_speed=True,experiment_name=${EXPERIMENT}" \
     ${LIMIT_ARG} \
     --output_path ${OUTPUT_DIR}/
 
