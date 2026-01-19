@@ -6,12 +6,19 @@
 # Results are stored by config name (not timestamp) for easy detection.
 #
 # Usage:
-#   bash sbatch/run.sh                           # Run missing only (gsm8k)
-#   bash sbatch/run.sh --status                  # Show completion status
-#   bash sbatch/run.sh --task mmlu               # Run missing for different task
+#   # Run missing experiments for the default task (gsm8k)
+#   bash sbatch/run.sh
+#
+#   # Run for a different task or with a sample limit
+#   bash sbatch/run.sh --task mmlu
+#   bash sbatch/run.sh --task mmlu --limit 10
+#
+#   # Check status (must pass the same flags as the run you want to check)
+#   bash sbatch/run.sh --status
+#   bash sbatch/run.sh --status --task mmlu --limit 10
+#
+#   # Other options
 #   bash sbatch/run.sh --experiment 01_new_exp   # Use different experiment name
-#   bash sbatch/run.sh --limit 10                # Test mode (10 samples)
-#   bash sbatch/run.sh --task mmlu --limit 10    # Combine options
 #   bash sbatch/run.sh --dry-run                 # Preview without submitting
 #   bash sbatch/run.sh --force                   # Re-run all configs
 #   bash sbatch/run.sh --force k2_middle         # Re-run specific config
@@ -56,7 +63,8 @@ Smart runner that only submits experiments that haven't completed yet.
 
 OPTIONS:
     -h, --help              Show this help message
-    --status                Show completion status for all configs
+    --status                Show completion status for a run. Pass the same flags
+                            (--task, --limit, etc.) as the original run.
     --dry-run               Preview jobs without submitting
     --limit <N>             Test mode: run only N samples
     --task <TASK>           Set task (default: gsm8k)
@@ -87,6 +95,7 @@ SHOW_STATUS=false
 LIMIT_ARG=""
 TASK_ARG=""
 EXPERIMENT_ARG=""
+STATUS_ARGS=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -113,16 +122,19 @@ while [[ $# -gt 0 ]]; do
         --limit)
             LIMIT_VALUE=$2
             LIMIT_ARG="--limit $2"
+            STATUS_ARGS="$STATUS_ARGS --limit $2"
             shift 2
             ;;
         --task)
             TASK=$2
             TASK_ARG="--task $2"
+            STATUS_ARGS="$STATUS_ARGS --task $2"
             shift 2
             ;;
         --experiment)
             EXPERIMENT=$2
             EXPERIMENT_ARG="$2"
+            STATUS_ARGS="$STATUS_ARGS --experiment $2"
             shift 2
             ;;
         *)
@@ -133,18 +145,17 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# If --limit is used, append it to the task name for unique paths
+# Define TASK_PATH for directory structures. It includes the limit if present.
+TASK_PATH="$TASK"
 if [[ -n "$LIMIT_VALUE" ]]; then
-    TASK="${TASK}_limit_${LIMIT_VALUE}"
-    # Update TASK_ARG to propagate the change to the job script
-    TASK_ARG="--task $TASK"
+    TASK_PATH="${TASK}_limit_${LIMIT_VALUE}"
 fi
 
 # Function to check if experiment completed successfully
 is_completed() {
     local config=$1
     # The summary file is stored in the artifacts directory
-    local summary_file="artifacts/${EXPERIMENT}/${TASK}/${config}/summary.json"
+    local summary_file="artifacts/${EXPERIMENT}/${TASK_PATH}/${config}/summary.json"
 
     # Check if summary.json exists - this indicates successful completion
     if [[ -f "$summary_file" ]]; then
@@ -204,12 +215,15 @@ done
 IFS=$'\n' TO_RUN_SORTED=($(sort <<<"${TO_RUN[*]}")); unset IFS
 
 if [ ${#TO_RUN_SORTED[@]} -eq 0 ]; then
-    echo "[INFO] All experiments already completed. Use --force to re-run."
+    echo "[INFO] All experiments for task '$TASK_PATH' in experiment '$EXPERIMENT' are already completed. Use --force to re-run."
     exit 0
 fi
 
 echo "============================================================================="
-echo "Experiments to run: ${#TO_RUN_SORTED[@]}"
+echo "Experiment: $EXPERIMENT"
+echo "Task:       $TASK_PATH"
+echo "-----------------------------------------------------------------------------"
+echo "Configs to run: ${#TO_RUN_SORTED[@]}"
 for config in "${TO_RUN_SORTED[@]}"; do
     echo "  - $config"
 done
@@ -228,11 +242,11 @@ for config in "${TO_RUN_SORTED[@]}"; do
 
     sbatch \
         --job-name="baseline-$config" \
-        --output="logs/${EXPERIMENT}/${TASK}/${config}/slurm_%j.log" \
-        --export=ALL,CONFIG_NAME="$config",REUSE_K="$K",LAYER_SUBSET="$SUBSET",LIMIT_ARG="$LIMIT_ARG",TASK_ARG="$TASK_ARG",EXPERIMENT_NAME="$EXPERIMENT" \
+        --output="logs/${EXPERIMENT}/${TASK_PATH}/${config}/slurm_%j.log" \
+        --export=ALL,CONFIG_NAME="$config",REUSE_K="$K",LAYER_SUBSET="$SUBSET",LIMIT_ARG="$LIMIT_ARG",TASK_ARG="$TASK_ARG",EXPERIMENT_NAME="$EXPERIMENT",TASK_PATH="$TASK_PATH" \
         "$SCRIPT_DIR/_job.sh"
 done
 
 echo ""
 echo "[INFO] Submitted ${#TO_RUN_SORTED[@]} jobs. Check status with: squeue -u $USER"
-echo "[INFO] View progress with: bash sbatch/run.sh --status"
+echo "[INFO] View progress with: bash sbatch/run.sh --status$STATUS_ARGS"

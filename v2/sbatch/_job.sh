@@ -45,13 +45,16 @@ if [[ "$TASK_ARG" == "--task "* ]]; then
     TASK="${TASK_ARG#--task }"
 fi
 
+# The path for this run, potentially with a limit suffix. Falls back to TASK.
+TASK_PATH="${TASK_PATH:-$TASK}"
+
 # Experiment name - passed from run.sh or defaults to 00_baseline
 EXPERIMENT="${EXPERIMENT_NAME:-00_baseline}"
-OUTPUT_DIR="results/${EXPERIMENT}/${TASK}/${CONFIG_NAME}"
+OUTPUT_DIR="results/${EXPERIMENT}/${TASK_PATH}/${CONFIG_NAME}"
 
 # Create output and log directories
 mkdir -p "$OUTPUT_DIR"
-mkdir -p "logs/${EXPERIMENT}/${TASK}/${CONFIG_NAME}"
+mkdir -p "logs/${EXPERIMENT}/${TASK_PATH}/${CONFIG_NAME}"
 
 echo "============================================================================="
 echo "Layer Reuse Experiment"
@@ -107,7 +110,7 @@ accelerate launch eval.py \
     --output_path ${OUTPUT_DIR}/
 
 # Copy summary.json to artifacts directory for git tracking
-ARTIFACTS_DIR="$PROJECT_ROOT/artifacts/${EXPERIMENT}/${TASK}/${CONFIG_NAME}"
+ARTIFACTS_DIR="$PROJECT_ROOT/artifacts/${EXPERIMENT}/${TASK_PATH}/${CONFIG_NAME}"
 mkdir -p "$ARTIFACTS_DIR"
 if [ -f "${OUTPUT_DIR}/summary.json" ]; then
     cp "${OUTPUT_DIR}/summary.json" "$ARTIFACTS_DIR/summary.json"
