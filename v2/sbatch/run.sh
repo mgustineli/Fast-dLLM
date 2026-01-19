@@ -32,7 +32,7 @@ cd "$PROJECT_ROOT"
 TASK="gsm8k"
 # Experiment name - use --experiment flag to override (e.g., 01_adaptive_skip)
 EXPERIMENT="00_baseline"
-RESULTS_BASE="results/${EXPERIMENT}/${TASK}"
+LIMIT_VALUE=""
 
 # All experiment configs: k_value and layer_subset
 declare -A CONFIGS=(
@@ -111,19 +111,18 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --limit)
+            LIMIT_VALUE=$2
             LIMIT_ARG="--limit $2"
             shift 2
             ;;
         --task)
             TASK=$2
             TASK_ARG="--task $2"
-            RESULTS_BASE="results/${EXPERIMENT}/${TASK}"
             shift 2
             ;;
         --experiment)
             EXPERIMENT=$2
             EXPERIMENT_ARG="$2"
-            RESULTS_BASE="results/${EXPERIMENT}/${TASK}"
             shift 2
             ;;
         *)
@@ -134,10 +133,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# If --limit is used, append it to the task name for unique paths
+if [[ -n "$LIMIT_VALUE" ]]; then
+    TASK="${TASK}_limit_${LIMIT_VALUE}"
+    # Update TASK_ARG to propagate the change to the job script
+    TASK_ARG="--task $TASK"
+fi
+
 # Function to check if experiment completed successfully
 is_completed() {
     local config=$1
-    local summary_file="$RESULTS_BASE/$config/summary.json"
+    # The summary file is stored in the artifacts directory
+    local summary_file="artifacts/${EXPERIMENT}/${TASK}/${config}/summary.json"
 
     # Check if summary.json exists - this indicates successful completion
     if [[ -f "$summary_file" ]]; then
