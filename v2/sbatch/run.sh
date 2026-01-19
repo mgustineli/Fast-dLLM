@@ -47,6 +47,38 @@ declare -A CONFIGS=(
     ["k3_last"]="3|last"
 )
 
+# Help function (for --help flag)
+show_help() {
+    cat << 'EOF'
+Usage: bash sbatch/run.sh [OPTIONS]
+
+Smart runner that only submits experiments that haven't completed yet.
+
+OPTIONS:
+    -h, --help              Show this help message
+    --status                Show completion status for all configs
+    --dry-run               Preview jobs without submitting
+    --limit <N>             Test mode: run only N samples
+    --task <TASK>           Set task (default: gsm8k)
+    --experiment <NAME>     Set experiment (default: 00_baseline)
+    --force [CONFIG]        Re-run all or specific config
+
+TASKS:
+    gsm8k, mmlu, gpqa_main_n_shot, minerva_math, ifeval
+
+CONFIGS:
+    k1_first, k1_middle, k1_last, k2_first, k2_middle, k2_last,
+    k3_first, k3_middle, k3_last
+
+EXAMPLES:
+    bash sbatch/run.sh                           # Run missing (gsm8k)
+    bash sbatch/run.sh --status                  # Show status
+    bash sbatch/run.sh --experiment 01_new       # Different experiment
+    bash sbatch/run.sh --limit 10 --dry-run      # Preview test run
+    bash sbatch/run.sh --force k2_middle         # Re-run one config
+EOF
+}
+
 # Parse arguments
 DRY_RUN=false
 FORCE=false
@@ -58,6 +90,10 @@ EXPERIMENT_ARG=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -92,6 +128,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown argument: $1"
+            echo "Run 'bash sbatch/run.sh --help' for usage"
             exit 1
             ;;
     esac
