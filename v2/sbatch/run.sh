@@ -29,7 +29,7 @@ cd "$PROJECT_ROOT"
 
 # Configuration
 TASK="gsm8k"
-EXPERIMENT="reuse_layers"
+EXPERIMENT="00_baseline"
 RESULTS_BASE="results/${EXPERIMENT}/${TASK}"
 
 # All experiment configs: k_value and layer_subset
@@ -174,7 +174,7 @@ for config in "${TO_RUN_SORTED[@]}"; do
     echo "[INFO] Submitting: $config (k=$K, subset=$SUBSET)"
 
     sbatch \
-        --job-name="reuse-$config" \
+        --job-name="baseline-$config" \
         --output="logs/${EXPERIMENT}/${TASK}/${config}/slurm_%j.log" \
         --export=ALL,CONFIG_NAME="$config",REUSE_K="$K",LAYER_SUBSET="$SUBSET",LIMIT_ARG="$LIMIT_ARG",TASK_ARG="$TASK_ARG" \
         "$SCRIPT_DIR/_job.sh"

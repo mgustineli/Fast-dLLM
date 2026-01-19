@@ -44,7 +44,7 @@ if [[ "$TASK_ARG" == "--task "* ]]; then
     TASK="${TASK_ARG#--task }"
 fi
 
-EXPERIMENT="reuse_layers"
+EXPERIMENT="00_baseline"
 OUTPUT_DIR="results/${EXPERIMENT}/${TASK}/${CONFIG_NAME}"
 
 # Create output and log directories
