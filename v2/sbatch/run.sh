@@ -9,6 +9,7 @@
 #   bash sbatch/run.sh                           # Run missing only (gsm8k)
 #   bash sbatch/run.sh --status                  # Show completion status
 #   bash sbatch/run.sh --task mmlu               # Run missing for different task
+#   bash sbatch/run.sh --experiment 01_new_exp   # Use different experiment name
 #   bash sbatch/run.sh --limit 10                # Test mode (10 samples)
 #   bash sbatch/run.sh --task mmlu --limit 10    # Combine options
 #   bash sbatch/run.sh --dry-run                 # Preview without submitting
@@ -29,6 +30,7 @@ cd "$PROJECT_ROOT"
 
 # Configuration
 TASK="gsm8k"
+# Experiment name - use --experiment flag to override (e.g., 01_adaptive_skip)
 EXPERIMENT="00_baseline"
 RESULTS_BASE="results/${EXPERIMENT}/${TASK}"
 
@@ -52,6 +54,7 @@ FORCE_CONFIG=""
 SHOW_STATUS=false
 LIMIT_ARG=""
 TASK_ARG=""
+EXPERIMENT_ARG=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -78,6 +81,12 @@ while [[ $# -gt 0 ]]; do
         --task)
             TASK=$2
             TASK_ARG="--task $2"
+            RESULTS_BASE="results/${EXPERIMENT}/${TASK}"
+            shift 2
+            ;;
+        --experiment)
+            EXPERIMENT=$2
+            EXPERIMENT_ARG="$2"
             RESULTS_BASE="results/${EXPERIMENT}/${TASK}"
             shift 2
             ;;
@@ -176,7 +185,7 @@ for config in "${TO_RUN_SORTED[@]}"; do
     sbatch \
         --job-name="baseline-$config" \
         --output="logs/${EXPERIMENT}/${TASK}/${config}/slurm_%j.log" \
-        --export=ALL,CONFIG_NAME="$config",REUSE_K="$K",LAYER_SUBSET="$SUBSET",LIMIT_ARG="$LIMIT_ARG",TASK_ARG="$TASK_ARG" \
+        --export=ALL,CONFIG_NAME="$config",REUSE_K="$K",LAYER_SUBSET="$SUBSET",LIMIT_ARG="$LIMIT_ARG",TASK_ARG="$TASK_ARG",EXPERIMENT_NAME="$EXPERIMENT" \
         "$SCRIPT_DIR/_job.sh"
 done
 

@@ -17,6 +17,7 @@
 #   LAYER_SUBSET: e.g., "middle"
 #   LIMIT_ARG: e.g., "--limit 10" (optional)
 #   TASK_ARG: e.g., "--task mmlu" (optional, default: gsm8k)
+#   EXPERIMENT_NAME: e.g., "00_baseline" (optional, default: 00_baseline)
 # =============================================================================
 
 set -e
@@ -44,7 +45,8 @@ if [[ "$TASK_ARG" == "--task "* ]]; then
     TASK="${TASK_ARG#--task }"
 fi
 
-EXPERIMENT="00_baseline"
+# Experiment name - passed from run.sh or defaults to 00_baseline
+EXPERIMENT="${EXPERIMENT_NAME:-00_baseline}"
 OUTPUT_DIR="results/${EXPERIMENT}/${TASK}/${CONFIG_NAME}"
 
 # Create output and log directories
