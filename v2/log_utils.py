@@ -1,7 +1,56 @@
 import os
+import sys
 import json
+import socket
 import torch
 import subprocess
+
+
+def get_git_info():
+    """Return git commit, branch, and dirty state."""
+    info = {}
+    try:
+        # Get current commit hash
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        info["commit"] = commit
+
+        # Get current branch
+        branch = subprocess.check_output(
+            ["git", "branch", "--show-current"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        info["branch"] = branch if branch else "detached"
+
+        # Check if working directory is dirty
+        status = subprocess.check_output(
+            ["git", "status", "--porcelain"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        info["dirty"] = len(status) > 0
+
+    except Exception as e:
+        info["error"] = str(e)
+
+    return info
+
+
+def get_environment_info():
+    """Return python/torch versions, hostname, slurm job id."""
+    info = {
+        "python_version": sys.version.split()[0],
+        "torch_version": torch.__version__,
+        "hostname": socket.gethostname(),
+    }
+
+    # Get SLURM job ID if running in SLURM
+    slurm_job_id = os.environ.get("SLURM_JOB_ID")
+    if slurm_job_id:
+        info["slurm_job_id"] = slurm_job_id
+
+    return info
 
 
 def get_gpu_info():
@@ -99,8 +148,9 @@ def extract_accuracy(results_dir, task="gsm8k"):
         return None
 
 
-def write_summary(output_dir, task, config, throughput_metrics, timestamp):
-    """Write a single summary.json combining accuracy, throughput, and config."""
+def write_summary(output_dir, task, config, throughput_metrics, timestamp,
+                  model_args=None, eval_params=None):
+    """Write a single summary.json combining accuracy, throughput, config, and metadata."""
     summary = {
         "task": task,
         "config": config,
@@ -108,7 +158,15 @@ def write_summary(output_dir, task, config, throughput_metrics, timestamp):
         "accuracy": extract_accuracy(output_dir, task),
         "throughput": throughput_metrics,
         "gpu_info": get_gpu_info(),
+        "git": get_git_info(),
+        "environment": get_environment_info(),
     }
+
+    # Add optional model args and eval params
+    if model_args is not None:
+        summary["model_args"] = model_args
+    if eval_params is not None:
+        summary["eval_params"] = eval_params
 
     summary_path = os.path.join(output_dir, "summary.json")
     with open(summary_path, "w") as f:

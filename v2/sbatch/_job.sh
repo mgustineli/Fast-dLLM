@@ -104,6 +104,14 @@ accelerate launch eval.py \
     ${LIMIT_ARG} \
     --output_path ${OUTPUT_DIR}/
 
+# Copy summary.json to artifacts directory for git tracking
+ARTIFACTS_DIR="$PROJECT_ROOT/artifacts/${EXPERIMENT}/${TASK}/${CONFIG_NAME}"
+mkdir -p "$ARTIFACTS_DIR"
+if [ -f "${OUTPUT_DIR}/summary.json" ]; then
+    cp "${OUTPUT_DIR}/summary.json" "$ARTIFACTS_DIR/summary.json"
+    echo "[INFO] Artifacts saved to $ARTIFACTS_DIR"
+fi
+
 echo ""
 echo "[INFO] Experiment complete: $CONFIG_NAME"
 echo "[INFO] Results: $OUTPUT_DIR"

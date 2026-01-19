@@ -443,12 +443,66 @@ class Fast_dLLM_v2EvalHarness(LM):
         return output
 
 
+def parse_model_args_string(model_args_str):
+    """Parse comma-separated key=value model args string into a dict."""
+    if not model_args_str:
+        return {}
+    result = {}
+    for pair in model_args_str.split(","):
+        if "=" in pair:
+            key, value = pair.split("=", 1)
+            # Try to parse value as appropriate type
+            if value.lower() == "true":
+                result[key] = True
+            elif value.lower() == "false":
+                result[key] = False
+            elif value.lower() == "none":
+                result[key] = None
+            else:
+                try:
+                    result[key] = int(value)
+                except ValueError:
+                    try:
+                        result[key] = float(value)
+                    except ValueError:
+                        result[key] = value
+    return result
+
+
+def extract_cli_args():
+    """Extract relevant CLI args for summary metadata."""
+    import sys
+    import argparse
+
+    # Parse only the args we care about for metadata (lm_eval handles the rest)
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--model_args", type=str, default="")
+    parser.add_argument("--num_fewshot", type=int, default=None)
+    parser.add_argument("--batch_size", type=str, default="1")
+    parser.add_argument("--limit", type=float, default=None)
+
+    args, _ = parser.parse_known_args()
+
+    model_args = parse_model_args_string(args.model_args)
+
+    eval_params = {
+        "num_fewshot": args.num_fewshot,
+        "batch_size": args.batch_size,
+        "limit": args.limit,
+    }
+
+    return model_args, eval_params
+
+
 if __name__ == "__main__":
     # Get config from environment (set by sbatch scripts)
     task = os.environ.get("TASK_NAME", "gsm8k")
     config_tag = os.environ.get("RUN_TAG", "default")
     output_dir = os.environ.get("OUTPUT_DIR")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Extract CLI args for metadata before lm_eval consumes them
+    model_args, eval_params = extract_cli_args()
 
     # Run the evaluation (lm_eval writes results.json to --output_path)
     cli_evaluate()
@@ -464,6 +518,8 @@ if __name__ == "__main__":
             config=config_tag,
             throughput_metrics=throughput,
             timestamp=timestamp,
+            model_args=model_args,
+            eval_params=eval_params,
         )
     else:
         print("[WARN] OUTPUT_DIR not set or invalid, skipping summary.json")
