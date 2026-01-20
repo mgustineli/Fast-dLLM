@@ -148,6 +148,22 @@ def extract_accuracy(results_dir, task="gsm8k"):
         return None
 
 
+def extract_groups(results_dir):
+    """Extract the 'groups' object from the lm_eval results.json file."""
+    results_path = find_results_file(results_dir)
+    if results_path is None:
+        return None
+
+    try:
+        with open(results_path) as f:
+            data = json.load(f)
+        # .get() returns None if the key doesn't exist, which is handled below
+        return data.get("groups")
+    except Exception as e:
+        print(f"[WARN] Could not extract groups from results file: {e}")
+        return None
+
+
 def write_summary(output_dir, task, config, throughput_metrics, timestamp,
                   model_args=None, eval_params=None):
     """Write a single summary.json combining accuracy, throughput, config, and metadata."""
@@ -161,6 +177,11 @@ def write_summary(output_dir, task, config, throughput_metrics, timestamp,
         "git": get_git_info(),
         "environment": get_environment_info(),
     }
+
+    # Extract and add group results if they exist
+    group_results = extract_groups(output_dir)
+    if group_results:
+        summary["group_results"] = group_results
 
     # Add optional model args and eval params
     if model_args is not None:
