@@ -79,7 +79,7 @@ CONFIGS:
     k3_first, k3_middle, k3_last
 
 EXAMPLES:
-    bash sbatch/run.sh                           # Run missing (gsm8k)
+    bash sbatch/run.sh                           # Run default (gsm8k)
     bash sbatch/run.sh --status                  # Show status
     bash sbatch/run.sh --experiment 01_new       # Different experiment
     bash sbatch/run.sh --limit 10 --dry-run      # Preview test run
