@@ -1,0 +1,52 @@
+{
+  "task": "minerva_math",
+  "config": "k1_middle",
+  "timestamp": "20260120_133930",
+  "accuracy": 0.42857142857142855,
+  "throughput": {
+    "tokens_generated": 50779,
+    "total_time_s": 1023.16,
+    "tokens_per_s": 49.63
+  },
+  "gpu_info": {
+    "gpu_available": true,
+    "gpu_name": "Quadro RTX 6000",
+    "gpu_total_vram_gb": 21.97,
+    "cuda_device": 0,
+    "cuda_version": "12.8",
+    "driver_version": "575.57.08"
+  },
+  "git": {
+    "commit": "3eafa80257c5ff24b2689b8f23bc4c087c85adc6",
+    "branch": "main",
+    "dirty": false
+  },
+  "environment": {
+    "python_version": "3.12.3",
+    "torch_version": "2.9.1+cu128",
+    "hostname": "atl1-1-02-005-35-0.pace.gatech.edu",
+    "slurm_job_id": "3354825"
+  },
+  "group_results": {
+    "minerva_math": {
+      "math_verify,none": 0.42857142857142855,
+      "math_verify_stderr,none": 0.05753831415997415,
+      "exact_match,none": 0.0,
+      "exact_match_stderr,none": 0.0,
+      "alias": "minerva_math"
+    }
+  },
+  "model_args": {
+    "model_path": "Efficient-Large-Model/Fast_dLLM_v2_7B",
+    "reuse_k": 1,
+    "layer_subset": "middle",
+    "use_block_cache": true,
+    "show_speed": true,
+    "experiment_name": "00_baseline"
+  },
+  "eval_params": {
+    "num_fewshot": 0,
+    "batch_size": "1",
+    "limit": 10.0
+  }
+}
