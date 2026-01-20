@@ -1,7 +1,7 @@
 {
   "task": "mmlu",
   "config": "k3_middle",
-  "timestamp": "20260119_164841",
+  "timestamp": "20260119_191005",
   "accuracy": 0.6877192982456141,
   "throughput": {},
   "gpu_info": {
@@ -13,15 +13,42 @@
     "driver_version": "575.57.08"
   },
   "git": {
-    "commit": "d2823fd660fa51f7488a6c84e0579ba2b06e6568",
+    "commit": "15efe7164e7d68faf80c1b67f81a4d7c27ee9fc0",
     "branch": "main",
     "dirty": true
   },
   "environment": {
     "python_version": "3.12.3",
     "torch_version": "2.9.1+cu128",
-    "hostname": "atl1-1-03-006-21-0.pace.gatech.edu",
-    "slurm_job_id": "3341489"
+    "hostname": "atl1-1-03-007-15-0.pace.gatech.edu",
+    "slurm_job_id": "3344225"
+  },
+  "group_results": {
+    "mmlu": {
+      "acc,none": 0.6877192982456141,
+      "acc_stderr,none": 0.018877207475519266,
+      "alias": "mmlu"
+    },
+    "mmlu_humanities": {
+      "acc,none": 0.6307692307692307,
+      "acc_stderr,none": 0.040542021284209986,
+      "alias": " - humanities"
+    },
+    "mmlu_other": {
+      "acc,none": 0.7307692307692307,
+      "acc_stderr,none": 0.03930694799168177,
+      "alias": " - other"
+    },
+    "mmlu_social_sciences": {
+      "acc,none": 0.7666666666666667,
+      "acc_stderr,none": 0.03908679799852858,
+      "alias": " - social sciences"
+    },
+    "mmlu_stem": {
+      "acc,none": 0.6473684210526316,
+      "acc_stderr,none": 0.03324086898508143,
+      "alias": " - stem"
+    }
   },
   "model_args": {
     "model_path": "Efficient-Large-Model/Fast_dLLM_v2_7B",
