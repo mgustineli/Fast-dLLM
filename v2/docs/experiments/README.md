@@ -271,26 +271,14 @@ The `--experiment` flag:
 
 ---
 
-## Known Limitations & Future Improvements
+## Known Issues & TODOs
 
-### Missing Throughput Tracking for Loglikelihood Tasks
+For detailed information about known issues, bugs, and improvement tasks, see **[tasks.md](tasks.md)**.
 
-**Issue:** Throughput metrics (tokens/second, total time, tokens generated) are only logged for generative tasks (GSM8K, HumanEval, etc.) but **not for loglikelihood-based tasks** (MMLU, etc.).
+### Current Critical Issues
 
-**Root Cause:**
-- `generate_until()` method (eval.py:335-470) has full throughput tracking
-- `loglikelihood()` method (eval.py:305-333) lacks timing and token counting
-- This results in empty `"throughput": {}` fields in summary.json for MMLU experiments
+- **Layer Reuse Not Working on MMLU** - All MMLU experiments show identical results (66.53% accuracy) across all configurations. Layer reuse optimization only works for generative tasks, not loglikelihood tasks. [Details →](layer-reuse-loglikelihood.md)
 
-**Impact:**
-- Cannot measure inference speed improvements for multiple-choice benchmarks
-- Incomplete performance comparison across different task types
-- Missing critical data for speedup analysis on MMLU, which is a key benchmark
+- **GPQA Authentication Required** - GPQA experiments fail due to missing HuggingFace authentication. Need to add HF_TOKEN to job scripts. [Details →](gpqa-authentication.md)
 
-**Priority:** High - This is important for comprehensive performance evaluation
-
-**Solution:** Add throughput tracking to `loglikelihood()` method similar to `generate_until()`:
-- Add start/end time tracking
-- Count tokens processed (prefix + target lengths)
-- Store metrics in class variable for retrieval by main script
-- Ensure `show_speed` parameter is respected
+- **Missing Throughput Tracking** - Loglikelihood tasks (MMLU, GPQA) don't track tokens/second metrics. [Details →](missing-throughput-tracking.md)
