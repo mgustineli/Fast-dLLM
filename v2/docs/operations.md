@@ -166,6 +166,10 @@ bash sbatch/run.sh --task mmlu
 # Different experiment (loads code from experiments/{name}/)
 bash sbatch/run.sh --experiment 01_adaptive_skip
 bash sbatch/run.sh --experiment 01_adaptive_skip --limit 10
+
+# Run a single config only (test mode)
+bash sbatch/run.sh --config k1_first --limit 10
+bash sbatch/run.sh --config k2_middle --task mmlu --limit 5
 ```
 
 ### Baseline Evaluation

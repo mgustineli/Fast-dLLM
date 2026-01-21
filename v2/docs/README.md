@@ -33,6 +33,7 @@ bash sbatch/run.sh --status
 bash sbatch/run.sh                        # Run missing only (00_baseline)
 bash sbatch/run.sh --limit 10             # Test mode
 bash sbatch/run.sh --experiment 01_new    # Different experiment
+bash sbatch/run.sh --config k1_first --limit 10  # Single config only
 ```
 
 ### Force Re-run

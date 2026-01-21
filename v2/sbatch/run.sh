@@ -69,6 +69,7 @@ OPTIONS:
     --limit <N>             Test mode: run only N samples
     --task <TASK>           Set task (default: gsm8k)
     --experiment <NAME>     Set experiment (default: 00_baseline)
+    --config <CONFIG>       Run only specific config (e.g., k1_first)
     --force [CONFIG]        Re-run all or specific config
 
 TASKS:
@@ -83,6 +84,8 @@ EXAMPLES:
     bash sbatch/run.sh --status                  # Show status
     bash sbatch/run.sh --experiment 01_new       # Different experiment
     bash sbatch/run.sh --limit 10 --dry-run      # Preview test run
+    bash sbatch/run.sh --config k1_first         # Run single config
+    bash sbatch/run.sh --task mmlu --limit 10 --config k2_middle  # Test specific config
     bash sbatch/run.sh --force k2_middle         # Re-run one config
 EOF
 }
@@ -91,6 +94,7 @@ EOF
 DRY_RUN=false
 FORCE=false
 FORCE_CONFIG=""
+CONFIG_FILTER=""
 SHOW_STATUS=false
 LIMIT_ARG=""
 TASK_ARG=""
@@ -135,6 +139,16 @@ while [[ $# -gt 0 ]]; do
             EXPERIMENT=$2
             EXPERIMENT_ARG="$2"
             STATUS_ARGS="$STATUS_ARGS --experiment $2"
+            shift 2
+            ;;
+        --config)
+            CONFIG_FILTER=$2
+            # Validate config exists
+            if [[ -z "${CONFIGS[$CONFIG_FILTER]}" ]]; then
+                echo "Error: Unknown config '$CONFIG_FILTER'"
+                echo "Valid configs: ${!CONFIGS[@]}"
+                exit 1
+            fi
             shift 2
             ;;
         *)
@@ -198,7 +212,12 @@ declare -a TO_RUN=()
 for config in "${!CONFIGS[@]}"; do
     should_run=false
 
-    if [ "$FORCE" = true ]; then
+    # If --config is specified, only run that specific config
+    if [ -n "$CONFIG_FILTER" ]; then
+        if [ "$config" = "$CONFIG_FILTER" ]; then
+            should_run=true
+        fi
+    elif [ "$FORCE" = true ]; then
         if [ -z "$FORCE_CONFIG" ] || [ "$config" = "$FORCE_CONFIG" ]; then
             should_run=true
         fi
@@ -215,7 +234,11 @@ done
 IFS=$'\n' TO_RUN_SORTED=($(sort <<<"${TO_RUN[*]}")); unset IFS
 
 if [ ${#TO_RUN_SORTED[@]} -eq 0 ]; then
-    echo "[INFO] All experiments for task '$TASK_PATH' in experiment '$EXPERIMENT' are already completed. Use --force to re-run."
+    if [ -n "$CONFIG_FILTER" ]; then
+        echo "[INFO] Config '$CONFIG_FILTER' for task '$TASK_PATH' in experiment '$EXPERIMENT' is already completed. Use --force to re-run."
+    else
+        echo "[INFO] All experiments for task '$TASK_PATH' in experiment '$EXPERIMENT' are already completed. Use --force to re-run."
+    fi
     exit 0
 fi
 

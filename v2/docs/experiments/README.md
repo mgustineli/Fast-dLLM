@@ -21,6 +21,9 @@ bash sbatch/run.sh
 
 # Run a different experiment version
 bash sbatch/run.sh --experiment 01_adaptive_skip
+
+# Run a single config only (test mode)
+bash sbatch/run.sh --config k1_first --limit 10
 ```
 
 ---
@@ -107,6 +110,10 @@ bash sbatch/run.sh --force
 
 # Force re-run specific config
 bash sbatch/run.sh --force k2_middle
+
+# Run a single config only (test mode)
+bash sbatch/run.sh --config k1_first --limit 10
+bash sbatch/run.sh --config k2_middle --task mmlu --limit 5
 ```
 
 **Status output example:**
