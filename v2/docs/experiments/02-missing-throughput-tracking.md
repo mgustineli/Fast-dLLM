@@ -1,5 +1,7 @@
 # Missing Throughput Tracking for Loglikelihood Tasks
 
+**Date:** 2026-01-20
+
 **Status:** TODO
 **Priority:** High
 **Affects:** MMLU, GPQA (all loglikelihood-based benchmarks)

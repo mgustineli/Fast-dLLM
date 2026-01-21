@@ -1,5 +1,7 @@
 # Layer Reuse NOT Applied to MMLU (Loglikelihood Tasks)
 
+**Date:** 2026-01-20
+
 **Status:** TODO
 **Priority:** CRITICAL
 **Affects:** MMLU, GPQA (all loglikelihood-based benchmarks)

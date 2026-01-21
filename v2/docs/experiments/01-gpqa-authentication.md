@@ -1,5 +1,7 @@
 # GPQA Dataset Requires HuggingFace Authentication
 
+**Date:** 2026-01-20
+
 **Status:** TODO
 **Priority:** High
 **Affects:** All GPQA experiments
