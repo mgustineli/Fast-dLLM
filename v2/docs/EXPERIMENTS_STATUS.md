@@ -8,36 +8,43 @@ Track ongoing and planned experiments to maintain context across sessions.
 
 ## Currently Running
 
-### Test Runs (Limit 10)
-Testing that code generation tasks work after adding `--confirm_run_unsafe_code` flag.
-
-- **HumanEval** - `--limit 10`, `k1_first` config
-  - Status: Running
-  - Purpose: Verify code execution works before full run
-
-- **MBPP** - `--limit 10`, `k1_first` config
-  - Status: Running
-  - Purpose: Verify code execution works before full run
+None
 
 ---
 
 ## Planned Next Steps
 
-1. **If test runs succeed:**
-   - Run full HumanEval (all configs)
-   - Run full MBPP (all configs)
+1. **Code Generation Tasks - Larger Sample Size:**
+   - Run HumanEval with `--limit 50` or `--limit 100` to get better accuracy estimates
+   - Run MBPP with `--limit 50` or `--limit 100` to get better accuracy estimates
+   - Initial tests (limit 10) showed 0% pass@1, but sample size too small to draw conclusions
 
-2. **Other tasks to evaluate:**
-   - GSM8K (if not complete)
-   - MMLU (if not complete)
-   - GPQA (if not complete)
-   - IFEval (if not complete)
+2. **If larger samples confirm functionality:**
+   - Run full HumanEval (all configs, no limit)
+   - Run full MBPP (all configs, no limit)
+
+3. **Other tasks to evaluate:**
+   - GSM8K (check completion status)
+   - MMLU (check completion status)
+   - GPQA (check completion status)
+   - IFEval (check completion status)
 
 ---
 
 ## Completed
 
-<!-- Track completed experiments here -->
+### Test Runs (Limit 10) - Jan 21, 2026
+Successfully verified code execution infrastructure works.
+
+- **HumanEval** - `--limit 10`, `k1_first` config
+  - Status: ✅ Completed
+  - Results: 0% pass@1 (0/10), 31.64 tokens/s
+  - Outcome: Infrastructure works, but sample too small for conclusions
+
+- **MBPP** - `--limit 10`, `k1_first` config
+  - Status: ✅ Completed
+  - Results: 0% pass@1 (0/10), 33.55 tokens/s
+  - Outcome: Infrastructure works, but sample too small for conclusions
 
 ---
 
