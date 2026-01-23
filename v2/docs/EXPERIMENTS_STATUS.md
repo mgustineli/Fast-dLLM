@@ -57,6 +57,17 @@ Successfully verified code execution infrastructure works.
 
 ---
 
+## Debugging Notes (2026-01-22)
+
+- **Issue:** HumanEval and MBPP show 0% accuracy despite `unsafe_code: true` in task config.
+- **Initial Hypothesis:** Incorrect flag for `lm-evaluation-harness` to enable code execution.
+  - Attempted to replace `--confirm_run_unsafe_code` with `--allow_code_execution` in `sbatch/_job.sh`.
+- **Result:** Failed with `eval.py: error: unrecognized arguments: --allow_code_execution`.
+- **Current Understanding:** The argument parsing in `eval.py` (specifically `extract_cli_args()`) is interfering with `lm-evaluation-harness`'s ability to process command-line arguments, including the `--allow_code_execution` flag.
+- **Next Steps:** Investigate how to correctly pass `lm-evaluation-harness` arguments through `eval.py` without conflicts, or how to enable code execution directly within `eval.py`'s `Fast_dLLM_v2EvalHarness` model definition. Consider temporary modification of `eval.py` to bypass its argument parsing for debugging.
+
+---
+
 ## Quick Commands
 
 ```bash
