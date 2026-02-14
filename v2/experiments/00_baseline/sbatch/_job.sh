@@ -1,9 +1,4 @@
 #!/bin/bash
-# =============================================================================
-# DEPRECATED: This script has been moved into each experiment directory.
-# Use: bash experiments/00_baseline/sbatch/run.sh (which calls its own _job.sh)
-# This file is kept for reference only.
-# =============================================================================
 #SBATCH --account=gts-ylin715-paid
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -14,15 +9,17 @@
 #SBATCH -qinferno
 
 # =============================================================================
-# Single Reuse Layer Experiment
+# 00_baseline - Single Reuse Layer Experiment
 # =============================================================================
 # Called by run.sh with environment variables:
-#   CONFIG_NAME: e.g., "k2_middle"
-#   REUSE_K: e.g., "2"
-#   LAYER_SUBSET: e.g., "middle"
-#   LIMIT_ARG: e.g., "--limit 10" (optional)
-#   TASK_ARG: e.g., "--task mmlu" (optional, default: gsm8k)
-#   EXPERIMENT_NAME: e.g., "00_baseline" (optional, default: 00_baseline)
+#   CONFIG_NAME:     e.g., "k2_middle"
+#   REUSE_K:         e.g., "2"
+#   LAYER_SUBSET:    e.g., "middle"
+#   LIMIT_ARG:       e.g., "--limit 10" (optional)
+#   TASK_ARG:        e.g., "--task mmlu" (optional, default: gsm8k)
+#   EXPERIMENT_NAME: e.g., "00_baseline"
+#   EXPERIMENT_DIR:  absolute path to experiment directory
+#   TASK_PATH:       e.g., "gsm8k" or "gsm8k_limit_10"
 # =============================================================================
 
 set -e
@@ -34,16 +31,22 @@ if [ -n "$SLURM_SUBMIT_DIR" ]; then
     PROJECT_ROOT="$SLURM_SUBMIT_DIR"
 else
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+    EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
+    PROJECT_ROOT="$(cd "$EXPERIMENT_DIR/../.." && pwd)"
 fi
 
 cd "$PROJECT_ROOT"
+
+# Source shared utilities
+source "$PROJECT_ROOT/sbatch/common.sh"
 
 # Defaults
 TASK="${TASK:-gsm8k}"
 CONFIG_NAME="${CONFIG_NAME:-unknown}"
 REUSE_K="${REUSE_K:-1}"
 LAYER_SUBSET="${LAYER_SUBSET:-first}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-00_baseline}"
+EXPERIMENT_DIR="${EXPERIMENT_DIR:-$PROJECT_ROOT/experiments/$EXPERIMENT_NAME}"
 
 # Parse TASK_ARG if provided
 if [[ "$TASK_ARG" == "--task "* ]]; then
@@ -53,46 +56,22 @@ fi
 # The path for this run, potentially with a limit suffix. Falls back to TASK.
 TASK_PATH="${TASK_PATH:-$TASK}"
 
-# Experiment name - passed from run.sh or defaults to 00_baseline
-EXPERIMENT="${EXPERIMENT_NAME:-00_baseline}"
-OUTPUT_DIR="results/${EXPERIMENT}/${TASK_PATH}/${CONFIG_NAME}"
+# Experiment-local output paths
+OUTPUT_DIR="${EXPERIMENT_DIR}/results/${TASK_PATH}/${CONFIG_NAME}"
+ARTIFACTS_DIR="${EXPERIMENT_DIR}/artifacts/${TASK_PATH}/${CONFIG_NAME}"
 
 # Create output and log directories
 mkdir -p "$OUTPUT_DIR"
-mkdir -p "logs/${EXPERIMENT}/${TASK_PATH}/${CONFIG_NAME}"
+mkdir -p "${EXPERIMENT_DIR}/logs/${TASK_PATH}/${CONFIG_NAME}"
 
-echo "============================================================================="
-echo "Layer Reuse Experiment"
-echo "Config: $CONFIG_NAME (k=$REUSE_K, subset=$LAYER_SUBSET)"
-echo "Task: $TASK"
-echo "Output: $OUTPUT_DIR"
-if [ -n "$SLURM_JOB_ID" ]; then
-    echo "Job ID: $SLURM_JOB_ID"
-    echo "Node: $SLURMD_NODENAME"
-fi
-echo "============================================================================="
+# Print job info
+print_job_info "Layer Reuse Experiment" "$CONFIG_NAME (k=$REUSE_K, subset=$LAYER_SUBSET)" "$TASK" "$OUTPUT_DIR"
 
 # =============================================================================
-# Virtual Environment Setup (per-job venv in TMPDIR for fast local I/O)
+# Virtual Environment & Environment Setup
 # =============================================================================
-JOB_VENV_DIR="$TMPDIR/fast-dllm-$SLURM_JOB_ID"
-JOB_VENV="$JOB_VENV_DIR/.venv"
-
-echo "[INFO] Setting up venv at $JOB_VENV..."
-mkdir -p "$JOB_VENV_DIR"
-uv venv "$JOB_VENV"
-source "$JOB_VENV/bin/activate"
-uv pip install -e "$PROJECT_ROOT"
-uv pip install torch --index-url https://download.pytorch.org/whl/cu121
-echo "[INFO] Venv setup complete"
-
-echo "[INFO] Python: $(which python)"
-
-# Environment setup
-export HF_ALLOW_CODE_EVAL=1
-export HF_DATASETS_TRUST_REMOTE_CODE=true
-export CUBLAS_WORKSPACE_CONFIG=":16:8"
-export PYTHONHASHSEED=42
+setup_venv
+setup_environment
 
 # Export for eval.py
 export TASK_NAME=$TASK
@@ -111,12 +90,11 @@ accelerate launch eval.py \
     --fewshot_as_multiturn \
     --apply_chat_template \
     --confirm_run_unsafe_code \
-    --model_args "model_path=${MODEL_PATH},reuse_k=${REUSE_K},layer_subset=${LAYER_SUBSET},use_block_cache=True,show_speed=True,experiment_name=${EXPERIMENT}" \
+    --model_args "model_path=${MODEL_PATH},reuse_k=${REUSE_K},layer_subset=${LAYER_SUBSET},use_block_cache=True,show_speed=True,experiment_name=${EXPERIMENT_NAME}" \
     ${LIMIT_ARG} \
     --output_path ${OUTPUT_DIR}/
 
 # Copy summary.json to artifacts directory for git tracking
-ARTIFACTS_DIR="$PROJECT_ROOT/artifacts/${EXPERIMENT}/${TASK_PATH}/${CONFIG_NAME}"
 mkdir -p "$ARTIFACTS_DIR"
 if [ -f "${OUTPUT_DIR}/summary.json" ]; then
     cp "${OUTPUT_DIR}/summary.json" "$ARTIFACTS_DIR/summary.json"

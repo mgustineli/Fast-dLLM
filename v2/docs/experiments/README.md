@@ -1,291 +1,58 @@
 # Experiments
 
-Documentation for Fast-dLLM v2 experiments and evaluation scripts.
+Cross-cutting documentation for Fast-dLLM v2 experiments.
 
-## Quick Start
+> **Note**: Experiment-specific documentation (proposal, results, tasks) now lives in each experiment's directory under `experiments/`. This directory contains cross-cutting docs that apply to multiple experiments.
+
+## Experiment Directories
+
+| Experiment | Status | Location |
+|-----------|--------|----------|
+| 00_baseline | GSM8K/MMLU done | [experiments/00_baseline/](../../experiments/00_baseline/) |
+
+## Creating a New Experiment
 
 ```bash
 cd ~/eic-lab/Fast-dLLM/v2
-
-# Show all options, tasks, configs, and examples
-bash sbatch/run.sh --help
-
-# Check experiment status (default: 00_baseline)
-bash sbatch/run.sh --status
-
-# Run missing experiments (test mode)
-bash sbatch/run.sh --limit 10
-
-# Run missing experiments (full)
-bash sbatch/run.sh
-
-# Run a different experiment version
-bash sbatch/run.sh --experiment 01_adaptive_skip
-
-# Run a single config only (test mode)
-bash sbatch/run.sh --config k1_first --limit 10
+cp -r experiments/_template experiments/01_new_experiment
+# Edit the files, then:
+bash experiments/01_new_experiment/sbatch/run.sh --dry-run
 ```
+
+See [experiments/_template/](../../experiments/_template/) for the scaffold.
 
 ---
 
-## Results Directory Structure
+## Cross-Cutting Issues
 
-Results are stored by **config name** (not timestamp) for easy completion detection:
+These issues affect multiple experiments and are tracked here:
 
-```
-results/                              # Full results (not git-tracked)
-├── 00_baseline/                      # Experiment name
-│   └── gsm8k/                        # Task
-│       ├── k1_first/                 # Config name
-│       │   ├── results.json          # Metrics and scores
-│       │   └── summary.json          # Throughput, config info
-│       ├── k1_middle/
-│       └── ...
-└── 01_adaptive_skip/
-    └── gsm8k/
-        └── ...
+| Issue | Priority | Details |
+|-------|----------|---------|
+| Layer reuse not applied to loglikelihood | CRITICAL | [00-layer-reuse-loglikelihood.md](00-layer-reuse-loglikelihood.md) |
+| GPQA authentication required | High | [01-gpqa-authentication.md](01-gpqa-authentication.md) |
+| Missing throughput for loglikelihood | High | [02-missing-throughput-tracking.md](02-missing-throughput-tracking.md) |
 
-artifacts/                            # Git-tracked summaries
-├── 00_baseline/
-│   └── gsm8k/
-│       ├── k1_first/
-│       │   └── summary.json
-│       └── ...
-└── 01_adaptive_skip/
-    └── ...
-
-experiments/                          # Versioned generation code
-├── 00_baseline/
-│   └── generation_functions.py       # Frozen baseline code
-└── 01_adaptive_skip/
-    └── generation_functions.py       # Modified experiment code
-```
-
----
-
-## Layer Reuse Experiments (Primary)
-
-Skip transformer layers during diffusion steps by reusing outputs from previous steps.
-
-### Parameters
-
-| Parameter | Values | Description |
-|-----------|--------|-------------|
-| `reuse_k` | 1, 2, 3 | Reuse every k-th step (k=1 means no reuse) |
-| `layer_subset` | first, middle, last | Which 12 layers to apply reuse |
-
-### Experiment Matrix (9 configurations)
-
-| Subset | k=1 | k=2 | k=3 |
-|--------|-----|-----|-----|
-| first (layers 1-11) | k1_first | k2_first | k3_first |
-| middle (layers 12-23) | k1_middle | k2_middle | k3_middle |
-| last (layers 24-35) | k1_last | k2_last | k3_last |
-
-### Running Experiments
-
-**Primary workflow - Smart Runner:**
-
-```bash
-# Check what's completed vs pending
-bash sbatch/run.sh --status
-
-# Run only missing experiments
-bash sbatch/run.sh
-
-# Test mode (10 samples per experiment)
-bash sbatch/run.sh --limit 10
-
-# Different task
-bash sbatch/run.sh --task mmlu
-
-# Combine options
-bash sbatch/run.sh --task mmlu --limit 10
-
-# Preview without submitting
-bash sbatch/run.sh --dry-run
-
-# Force re-run all
-bash sbatch/run.sh --force
-
-# Force re-run specific config
-bash sbatch/run.sh --force k2_middle
-
-# Run a single config only (test mode)
-bash sbatch/run.sh --config k1_first --limit 10
-bash sbatch/run.sh --config k2_middle --task mmlu --limit 5
-```
-
-**Status output example:**
-
-```
-=============================================================================
-Experiment Status: 00_baseline / gsm8k
-=============================================================================
-  ✓ k1_first
-  ✓ k1_middle
-  ✗ k2_first (pending)
-  ✗ k2_middle (pending)
-  ...
-=============================================================================
-Completed: 2 / 9
-=============================================================================
-```
-
----
-
-## Baseline Experiments
-
-Standard Fast-dLLM v2 inference with threshold-based parallel decoding.
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `threshold` | 1.0 | Confidence threshold for token unmasking |
-| `use_block_cache` | True | Enable block-level KV caching |
-
-**Script:** `sbatch/baseline.sh`
-
-```bash
-# Single task
-sbatch sbatch/baseline.sh --task gsm8k
-
-# Test mode
-sbatch sbatch/baseline.sh --task gsm8k --limit 10
-
-# All tasks (mmlu, gpqa, gsm8k, minerva_math, ifeval)
-sbatch sbatch/baseline.sh
-```
-
----
-
-## Local Testing (No SLURM)
-
-For interactive testing without submitting to the cluster:
-
-**Script:** `sbatch/local.sh`
-
-```bash
-# Run locally
-bash sbatch/local.sh --task gsm8k --limit 10
-```
+See [tasks.md](tasks.md) for the full task list.
 
 ---
 
 ## Benchmark Tasks
 
-| Task | Description | Metric |
-|------|-------------|--------|
-| `gsm8k` | Grade School Math 8K | Accuracy |
-| `mmlu` | Massive Multitask Language Understanding | Accuracy |
-| `gpqa_main_n_shot` | Graduate-level Q&A | Accuracy |
-| `minerva_math` | Mathematical reasoning | Accuracy |
-| `ifeval` | Instruction following | Pass rate |
+| Task | Description | Metric | Type |
+|------|-------------|--------|------|
+| `gsm8k` | Grade School Math 8K | Accuracy | Generative |
+| `mmlu` | Massive Multitask Language Understanding | Accuracy | Loglikelihood |
+| `gpqa_main_n_shot` | Graduate-level Q&A | Accuracy | Loglikelihood |
+| `minerva_math` | Mathematical reasoning | Accuracy | Generative |
+| `ifeval` | Instruction following | Pass rate | Generative |
 
 ---
 
-## Monitoring Jobs
+## Experiment Matrix (00_baseline)
 
-```bash
-# Check job queue
-squeue -u $USER
-
-# Check experiment completion
-bash sbatch/run.sh --status
-bash sbatch/run.sh --status --experiment 01_adaptive_skip
-
-# View live logs
-tail -f logs/00_baseline/gsm8k/k2_middle/slurm_*.log
-
-# Cancel a job
-scancel <job_id>
-
-# Cancel all your jobs
-scancel -u $USER
-```
-
----
-
-## Scripts Reference
-
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| `run.sh` | Smart runner (primary) | `bash sbatch/run.sh --status` |
-| `baseline.sh` | Baseline evaluation | `sbatch sbatch/baseline.sh --task gsm8k` |
-| `local.sh` | Local testing | `bash sbatch/local.sh --task gsm8k` |
-| `_job.sh` | Single experiment job | Internal (called by `run.sh`) |
-| `_array.sh` | Array job | **Deprecated** |
-
----
-
-## Expected Results
-
-### Baseline Performance (Fast-dLLM v2 7B)
-
-| Task | Score |
-|------|-------|
-| GSM8K | 83.7% |
-| HumanEval | 63.4% |
-| MMLU | 66.6% |
-| GPQA | 31.9% |
-
-### Layer Reuse Tradeoffs (Expected)
-
-| Config | Expected Speedup | Expected Accuracy Impact |
-|--------|------------------|-------------------------|
-| k=1 | Baseline | None |
-| k=2 | ~1.2-1.4x | Small drop |
-| k=3 | ~1.3-1.5x | Moderate drop |
-
-*Note: Middle layers typically show best speedup/accuracy tradeoff.*
-
----
-
-## How Completion Detection Works
-
-The smart runner (`run.sh`) checks for completion by:
-
-1. Looking for `results/<experiment>/<task>/<config>/summary.json`
-2. If the file exists, the experiment is considered complete
-
-This allows:
-- Re-running only failed/incomplete experiments
-- Easy tracking of progress with `--status`
-- Forcing re-runs with `--force`
-
-## Creating New Experiments
-
-To create a new experiment with modified generation code:
-
-```bash
-# 1. Create experiment directory
-mkdir -p experiments/01_adaptive_skip
-
-# 2. Copy and modify generation_functions.py
-cp generation_functions.py experiments/01_adaptive_skip/
-
-# 3. Edit the experiment code
-# vim experiments/01_adaptive_skip/generation_functions.py
-
-# 4. Run the experiment
-bash sbatch/run.sh --experiment 01_adaptive_skip --limit 10  # Test first
-bash sbatch/run.sh --experiment 01_adaptive_skip             # Full run
-```
-
-The `--experiment` flag:
-- Loads `generation_functions.py` from `experiments/{name}/`
-- Stores results in `results/{name}/{task}/{config}/`
-- Copies `summary.json` to `artifacts/{name}/{task}/{config}/`
-
----
-
-## Known Issues & TODOs
-
-For detailed information about known issues, bugs, and improvement tasks, see **[tasks.md](tasks.md)**.
-
-### Current Critical Issues
-
-- **Layer Reuse Not Working on MMLU** - All MMLU experiments show identical results (66.53% accuracy) across all configurations. Layer reuse optimization only works for generative tasks, not loglikelihood tasks. [Details →](layer-reuse-loglikelihood.md)
-
-- **GPQA Authentication Required** - GPQA experiments fail due to missing HuggingFace authentication. Need to add HF_TOKEN to job scripts. [Details →](gpqa-authentication.md)
-
-- **Missing Throughput Tracking** - Loglikelihood tasks (MMLU, GPQA) don't track tokens/second metrics. [Details →](missing-throughput-tracking.md)
+| Subset | k=1 (baseline) | k=2 | k=3 |
+|--------|----------------|-----|-----|
+| first (layers 1-11) | k1_first | k2_first | k3_first |
+| middle (layers 12-23) | k1_middle | k2_middle | k3_middle |
+| last (layers 24-35) | k1_last | k2_last | k3_last |

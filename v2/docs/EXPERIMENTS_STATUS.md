@@ -1,8 +1,38 @@
 # Experiments Status
 
-**Last Updated:** 2026-01-21
+**Last Updated:** 2026-02-14
 
 Track ongoing and planned experiments to maintain context across sessions.
+
+---
+
+## Experiment Structure
+
+Each experiment is a self-contained directory under `experiments/`:
+
+```
+experiments/
+├── _template/              # Scaffold for new experiments
+└── 00_baseline/            # Layer reuse baseline
+    ├── README.md           # Quick start + status
+    ├── proposal.md         # Hypothesis + method
+    ├── results.md          # Findings + tables
+    ├── tasks.md            # Implementation checklist
+    ├── config.yaml         # Parameters
+    ├── generation_functions.py
+    ├── sbatch/             # run.sh + _job.sh
+    ├── artifacts/          # Git-tracked summary.json files
+    ├── results/            # Full results (gitignored)
+    └── logs/               # SLURM logs (gitignored)
+```
+
+### Creating a New Experiment
+
+```bash
+cp -r experiments/_template experiments/01_new_experiment
+# Edit the files in experiments/01_new_experiment/
+bash experiments/01_new_experiment/sbatch/run.sh --dry-run
+```
 
 ---
 
@@ -12,71 +42,57 @@ None
 
 ---
 
+## Completed Experiments
+
+### 00_baseline - Layer Reuse Baseline
+
+**Status**: GSM8K and MMLU complete, Minerva Math and IFEval partial (limit runs only)
+**Details**: [experiments/00_baseline/](../experiments/00_baseline/)
+
+| Task | Configs | Status |
+|------|---------|--------|
+| GSM8K (full) | 9/9 | Done |
+| MMLU (full) | 9/9 | Done |
+| MMLU (limit_10) | 9/9 | Done |
+| Minerva Math (limit_10) | 9/9 | Done |
+| IFEval (limit_5) | 1/9 | Partial |
+
+**Quick check:**
+```bash
+bash experiments/00_baseline/sbatch/run.sh --status --task gsm8k
+```
+
+---
+
 ## Planned Next Steps
 
-1. **Code Generation Tasks - Larger Sample Size:**
-   - Run HumanEval with `--limit 50` or `--limit 100` to get better accuracy estimates
-   - Run MBPP with `--limit 50` or `--limit 100` to get better accuracy estimates
-   - Initial tests (limit 10) showed 0% pass@1, but sample size too small to draw conclusions
-
-2. **If larger samples confirm functionality:**
-   - Run full HumanEval (all configs, no limit)
-   - Run full MBPP (all configs, no limit)
-
-3. **Other tasks to evaluate:**
-   - GSM8K (check completion status)
-   - MMLU (check completion status)
-   - GPQA (check completion status)
-   - IFEval (check completion status)
+1. **Run full Minerva Math** (all 9 configs, no limit)
+2. **Run full IFEval** (all 9 configs, no limit)
+3. **Investigate k1_first throughput anomaly** (22.75 vs ~50 tok/s)
+4. **Code generation tasks** (HumanEval, MBPP) - initial limit_10 tests showed 0% pass@1
 
 ---
 
-## Completed
+## Known Issues
 
-### Test Runs (Limit 10) - Jan 21, 2026
-Successfully verified code execution infrastructure works.
+See [experiments/00_baseline/tasks.md](../experiments/00_baseline/tasks.md) and [experiments/tasks.md](experiments/tasks.md) for details.
 
-- **HumanEval** - `--limit 10`, `k1_first` config
-  - Status: ✅ Completed
-  - Results: 0% pass@1 (0/10), 31.64 tokens/s
-  - Outcome: Infrastructure works, but sample too small for conclusions
-
-- **MBPP** - `--limit 10`, `k1_first` config
-  - Status: ✅ Completed
-  - Results: 0% pass@1 (0/10), 33.55 tokens/s
-  - Outcome: Infrastructure works, but sample too small for conclusions
-
----
-
-## Notes
-
-- Added `--confirm_run_unsafe_code` flag to `sbatch/_job.sh` for code execution tasks
-- HumanEval and MBPP require code execution (unsafe), other tasks are text-only (safe)
-- All experiments use `00_baseline` experiment name
-- Results stored in: `artifacts/00_baseline/<task>_limit_<N>/<config>/`
-
----
-
-## Debugging Notes (2026-01-22)
-
-- **Issue:** HumanEval and MBPP show 0% accuracy despite `unsafe_code: true` in task config.
-- **Initial Hypothesis:** Incorrect flag for `lm-evaluation-harness` to enable code execution.
-  - Attempted to replace `--confirm_run_unsafe_code` with `--allow_code_execution` in `sbatch/_job.sh`.
-- **Result:** Failed with `eval.py: error: unrecognized arguments: --allow_code_execution`.
-- **Current Understanding:** The argument parsing in `eval.py` (specifically `extract_cli_args()`) is interfering with `lm-evaluation-harness`'s ability to process command-line arguments, including the `--allow_code_execution` flag.
-- **Next Steps:** Investigate how to correctly pass `lm-evaluation-harness` arguments through `eval.py` without conflicts, or how to enable code execution directly within `eval.py`'s `Fast_dLLM_v2EvalHarness` model definition. Consider temporary modification of `eval.py` to bypass its argument parsing for debugging.
+- Layer reuse does NOT apply to loglikelihood tasks (MMLU, GPQA)
+- GPQA dataset requires HuggingFace authentication
+- Throughput metrics missing for loglikelihood tasks
 
 ---
 
 ## Quick Commands
 
 ```bash
-# Check status
-bash sbatch/run.sh --status --task humaneval --limit 10
+# Check experiment status
+bash experiments/00_baseline/sbatch/run.sh --status
+bash experiments/00_baseline/sbatch/run.sh --status --task mmlu
 
-# Submit test run
-bash sbatch/run.sh --task humaneval --limit 10 --config k1_first
+# Submit jobs
+bash experiments/00_baseline/sbatch/run.sh --task minerva_math
 
 # View logs
-tail -f logs/00_baseline/humaneval_limit_10/k1_first/slurm_*.log
+tail -f experiments/00_baseline/logs/gsm8k/k2_middle/slurm_*.log
 ```

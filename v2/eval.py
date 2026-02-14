@@ -75,7 +75,7 @@ def set_seed(seed):
 
 def load_generation_module(experiment_name=None):
     """Load generation_functions from experiment directory or default."""
-    if experiment_name and experiment_name != "00_baseline":
+    if experiment_name:
         module_path = os.path.join(
             os.path.dirname(__file__),
             "experiments",

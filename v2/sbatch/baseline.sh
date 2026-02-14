@@ -1,4 +1,9 @@
 #!/bin/bash
+# =============================================================================
+# DEPRECATED: Use experiment-specific sbatch scripts instead.
+# Example: bash experiments/00_baseline/sbatch/run.sh
+# This file is kept for reference only.
+# =============================================================================
 #SBATCH --job-name=fast-dllm-eval
 #SBATCH --account=gts-ylin715-paid
 #SBATCH --nodes=1

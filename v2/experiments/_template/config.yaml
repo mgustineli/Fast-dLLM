@@ -1,0 +1,40 @@
+# Experiment Configuration
+# This file documents the experiment parameters. It is read by humans, not scripts.
+# The actual parameters are defined in sbatch/run.sh CONFIGS array.
+
+experiment:
+  name: "[NAME]"
+  description: "[Brief description]"
+
+model:
+  path: "Efficient-Large-Model/Fast_dLLM_v2_7B"
+  use_block_cache: true
+  show_speed: true
+
+generation:
+  # Override these in generation_functions.py or via model_args
+  threshold: 0.95
+  block_size: 32
+  small_block_size: 8
+
+evaluation:
+  tasks:
+    - gsm8k
+    - mmlu
+  batch_size: 1
+  num_fewshot: 0
+  fewshot_as_multiturn: true
+  apply_chat_template: true
+
+# Experiment-specific parameters
+# configs:
+#   k1_first: { reuse_k: 1, layer_subset: first }
+#   k2_first: { reuse_k: 2, layer_subset: first }
+
+compute:
+  gpu: "rtx_6000"
+  memory: "64G"
+  cpus: 4
+  time: "12:00:00"
+  queue: "inferno"
+  account: "gts-ylin715-paid"

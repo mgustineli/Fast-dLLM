@@ -1,49 +1,30 @@
 #!/bin/bash
 # =============================================================================
-# DEPRECATED: This script has been moved into each experiment directory.
-# Use: bash experiments/00_baseline/sbatch/run.sh
-# This file is kept for reference only.
-# =============================================================================
-#
-# Layer Reuse Experiments - Smart Runner
+# [EXPERIMENT_NAME] - Smart Runner
 # =============================================================================
 # Runs only experiments that haven't completed yet.
-# Results are stored by config name (not timestamp) for easy detection.
 #
 # Usage:
-#   # Run missing experiments for the default task (gsm8k)
-#   bash sbatch/run.sh
-#
-#   # Run for a different task or with a sample limit
-#   bash sbatch/run.sh --task mmlu
-#   bash sbatch/run.sh --task mmlu --limit 10
-#
-#   # Check status (must pass the same flags as the run you want to check)
-#   bash sbatch/run.sh --status
-#   bash sbatch/run.sh --status --task mmlu --limit 10
-#
-#   # Other options
-#   bash sbatch/run.sh --experiment 01_new_exp   # Use different experiment name
-#   bash sbatch/run.sh --dry-run                 # Preview without submitting
-#   bash sbatch/run.sh --force                   # Re-run all configs
-#   bash sbatch/run.sh --force k2_middle         # Re-run specific config
-#
-# Tasks: gsm8k (default), mmlu, gpqa_main_n_shot, minerva_math, ifeval
-# Configs: k1_first, k1_middle, k1_last, k2_first, k2_middle, k2_last, k3_first, k3_middle, k3_last
+#   bash experiments/[NAME]/sbatch/run.sh --status
+#   bash experiments/[NAME]/sbatch/run.sh --dry-run
+#   bash experiments/[NAME]/sbatch/run.sh
+#   bash experiments/[NAME]/sbatch/run.sh --task mmlu --limit 10
+#   bash experiments/[NAME]/sbatch/run.sh --config k1_first
+#   bash experiments/[NAME]/sbatch/run.sh --force
 # =============================================================================
 
 set -e
 
-# Get script directory and project root
+# Derive paths from script location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
+EXPERIMENT_NAME="$(basename "$EXPERIMENT_DIR")"
+PROJECT_ROOT="$(cd "$EXPERIMENT_DIR/../.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
 # Configuration
 TASK="gsm8k"
-# Experiment name - use --experiment flag to override (e.g., 01_adaptive_skip)
-EXPERIMENT="00_baseline"
 LIMIT_VALUE=""
 
 # All experiment configs: k_value and layer_subset
@@ -59,21 +40,19 @@ declare -A CONFIGS=(
     ["k3_last"]="3|last"
 )
 
-# Help function (for --help flag)
+# Help function
 show_help() {
-    cat << 'EOF'
-Usage: bash sbatch/run.sh [OPTIONS]
+    cat << EOF
+Usage: bash experiments/${EXPERIMENT_NAME}/sbatch/run.sh [OPTIONS]
 
 Smart runner that only submits experiments that haven't completed yet.
 
 OPTIONS:
     -h, --help              Show this help message
-    --status                Show completion status for a run. Pass the same flags
-                            (--task, --limit, etc.) as the original run.
+    --status                Show completion status
     --dry-run               Preview jobs without submitting
     --limit <N>             Test mode: run only N samples
     --task <TASK>           Set task (default: gsm8k)
-    --experiment <NAME>     Set experiment (default: 00_baseline)
     --config <CONFIG>       Run only specific config (e.g., k1_first)
     --force [CONFIG]        Re-run all or specific config
 
@@ -85,13 +64,11 @@ CONFIGS:
     k3_first, k3_middle, k3_last
 
 EXAMPLES:
-    bash sbatch/run.sh                           # Run default (gsm8k)
-    bash sbatch/run.sh --status                  # Show status
-    bash sbatch/run.sh --experiment 01_new       # Different experiment
-    bash sbatch/run.sh --limit 10 --dry-run      # Preview test run
-    bash sbatch/run.sh --config k1_first         # Run single config
-    bash sbatch/run.sh --task mmlu --limit 10 --config k2_middle  # Test specific config
-    bash sbatch/run.sh --force k2_middle         # Re-run one config
+    bash experiments/${EXPERIMENT_NAME}/sbatch/run.sh --status
+    bash experiments/${EXPERIMENT_NAME}/sbatch/run.sh --limit 10 --dry-run
+    bash experiments/${EXPERIMENT_NAME}/sbatch/run.sh --config k1_first
+    bash experiments/${EXPERIMENT_NAME}/sbatch/run.sh --task mmlu --limit 10
+    bash experiments/${EXPERIMENT_NAME}/sbatch/run.sh --force k2_middle
 EOF
 }
 
@@ -103,7 +80,6 @@ CONFIG_FILTER=""
 SHOW_STATUS=false
 LIMIT_ARG=""
 TASK_ARG=""
-EXPERIMENT_ARG=""
 STATUS_ARGS=""
 
 while [[ $# -gt 0 ]]; do
@@ -140,15 +116,8 @@ while [[ $# -gt 0 ]]; do
             STATUS_ARGS="$STATUS_ARGS --task $2"
             shift 2
             ;;
-        --experiment)
-            EXPERIMENT=$2
-            EXPERIMENT_ARG="$2"
-            STATUS_ARGS="$STATUS_ARGS --experiment $2"
-            shift 2
-            ;;
         --config)
             CONFIG_FILTER=$2
-            # Validate config exists
             if [[ -z "${CONFIGS[$CONFIG_FILTER]}" ]]; then
                 echo "Error: Unknown config '$CONFIG_FILTER'"
                 echo "Valid configs: ${!CONFIGS[@]}"
@@ -158,36 +127,29 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown argument: $1"
-            echo "Run 'bash sbatch/run.sh --help' for usage"
+            echo "Run 'bash experiments/${EXPERIMENT_NAME}/sbatch/run.sh --help' for usage"
             exit 1
             ;;
     esac
 done
 
-# Define TASK_PATH for directory structures. It includes the limit if present.
+# Define TASK_PATH for directory structures
 TASK_PATH="$TASK"
 if [[ -n "$LIMIT_VALUE" ]]; then
     TASK_PATH="${TASK}_limit_${LIMIT_VALUE}"
 fi
 
-# Function to check if experiment completed successfully
+# Check completion via experiment-local artifacts
 is_completed() {
     local config=$1
-    # The summary file is stored in the artifacts directory
-    local summary_file="artifacts/${EXPERIMENT}/${TASK_PATH}/${config}/summary.json"
-
-    # Check if summary.json exists - this indicates successful completion
-    if [[ -f "$summary_file" ]]; then
-        return 0  # Completed
-    fi
-
-    return 1  # Not completed
+    local summary_file="${EXPERIMENT_DIR}/artifacts/${TASK_PATH}/${config}/summary.json"
+    [[ -f "$summary_file" ]]
 }
 
 # Show status and exit
 if [ "$SHOW_STATUS" = true ]; then
     echo "============================================================================="
-    echo "Experiment Status: $EXPERIMENT / $TASK"
+    echo "Experiment Status: $EXPERIMENT_NAME / $TASK_PATH"
     echo "============================================================================="
     completed=0
     pending=0
@@ -201,10 +163,7 @@ if [ "$SHOW_STATUS" = true ]; then
             ((pending++)) || true
         fi
     done
-
-    # Sort and print the collected lines
     printf '%s\n' "${lines[@]}" | sort
-
     echo "============================================================================="
     echo "Completed: $completed / ${#CONFIGS[@]}"
     echo "============================================================================="
@@ -216,8 +175,6 @@ declare -a TO_RUN=()
 
 for config in "${!CONFIGS[@]}"; do
     should_run=false
-
-    # If --config is specified, only run that specific config
     if [ -n "$CONFIG_FILTER" ]; then
         if [ "$config" = "$CONFIG_FILTER" ]; then
             should_run=true
@@ -235,20 +192,19 @@ for config in "${!CONFIGS[@]}"; do
     fi
 done
 
-# Sort configs for consistent ordering
 IFS=$'\n' TO_RUN_SORTED=($(sort <<<"${TO_RUN[*]}")); unset IFS
 
 if [ ${#TO_RUN_SORTED[@]} -eq 0 ]; then
     if [ -n "$CONFIG_FILTER" ]; then
-        echo "[INFO] Config '$CONFIG_FILTER' for task '$TASK_PATH' in experiment '$EXPERIMENT' is already completed. Use --force to re-run."
+        echo "[INFO] Config '$CONFIG_FILTER' for task '$TASK_PATH' is already completed. Use --force to re-run."
     else
-        echo "[INFO] All experiments for task '$TASK_PATH' in experiment '$EXPERIMENT' are already completed. Use --force to re-run."
+        echo "[INFO] All experiments for task '$TASK_PATH' are already completed. Use --force to re-run."
     fi
     exit 0
 fi
 
 echo "============================================================================="
-echo "Experiment: $EXPERIMENT"
+echo "Experiment: $EXPERIMENT_NAME"
 echo "Task:       $TASK_PATH"
 echo "-----------------------------------------------------------------------------"
 echo "Configs to run: ${#TO_RUN_SORTED[@]}"
@@ -269,12 +225,12 @@ for config in "${TO_RUN_SORTED[@]}"; do
     echo "[INFO] Submitting: $config (k=$K, subset=$SUBSET)"
 
     sbatch \
-        --job-name="baseline-$config" \
-        --output="logs/${EXPERIMENT}/${TASK_PATH}/${config}/slurm_%j.log" \
-        --export=ALL,CONFIG_NAME="$config",REUSE_K="$K",LAYER_SUBSET="$SUBSET",LIMIT_ARG="$LIMIT_ARG",TASK_ARG="$TASK_ARG",EXPERIMENT_NAME="$EXPERIMENT",TASK_PATH="$TASK_PATH" \
+        --job-name="${EXPERIMENT_NAME}-$config" \
+        --output="${EXPERIMENT_DIR}/logs/${TASK_PATH}/${config}/slurm_%j.log" \
+        --export=ALL,CONFIG_NAME="$config",REUSE_K="$K",LAYER_SUBSET="$SUBSET",LIMIT_ARG="$LIMIT_ARG",TASK_ARG="$TASK_ARG",EXPERIMENT_NAME="$EXPERIMENT_NAME",EXPERIMENT_DIR="$EXPERIMENT_DIR",TASK_PATH="$TASK_PATH" \
         "$SCRIPT_DIR/_job.sh"
 done
 
 echo ""
 echo "[INFO] Submitted ${#TO_RUN_SORTED[@]} jobs. Check status with: squeue -u $USER"
-echo "[INFO] View progress with: bash sbatch/run.sh --status$STATUS_ARGS"
+echo "[INFO] View progress with: bash experiments/${EXPERIMENT_NAME}/sbatch/run.sh --status$STATUS_ARGS"

@@ -1,4 +1,9 @@
 #!/bin/bash
+# =============================================================================
+# DEPRECATED: Use experiment-specific sbatch scripts instead.
+# Example: bash experiments/00_baseline/sbatch/run.sh --task gsm8k
+# This file is kept for reference only.
+# =============================================================================
 set -e
 
 # =============================================================================

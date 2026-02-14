@@ -17,43 +17,27 @@ Fast-dLLM v2 research project documentation.
 
 ## Running Experiments
 
-### Get Help
-```bash
-cd ~/eic-lab/Fast-dLLM/v2
-bash sbatch/run.sh --help    # Show all options, tasks, configs, examples
-```
+Each experiment is self-contained under `experiments/`:
 
 ### Check Status
 ```bash
-bash sbatch/run.sh --status
+cd ~/eic-lab/Fast-dLLM/v2
+bash experiments/00_baseline/sbatch/run.sh --status
 ```
 
 ### Run Missing Experiments
 ```bash
-bash sbatch/run.sh                        # Run missing only (00_baseline)
-bash sbatch/run.sh --limit 10             # Test mode
-bash sbatch/run.sh --experiment 01_new    # Different experiment
-bash sbatch/run.sh --config k1_first --limit 10  # Single config only
+bash experiments/00_baseline/sbatch/run.sh                        # Run missing only
+bash experiments/00_baseline/sbatch/run.sh --limit 10             # Test mode
+bash experiments/00_baseline/sbatch/run.sh --config k1_first      # Single config only
 ```
 
-### Force Re-run
+### Create a New Experiment
 ```bash
-bash sbatch/run.sh --force k2_middle  # Specific config
-bash sbatch/run.sh --force            # All configs
+cp -r experiments/_template experiments/01_new_experiment
+# Edit files in the new directory, then:
+bash experiments/01_new_experiment/sbatch/run.sh --dry-run
 ```
-
----
-
-## Scripts Reference
-
-| Script | Purpose | When to Use |
-|--------|---------|-------------|
-| `sbatch/run.sh` | Smart runner: only runs missing experiments | **Primary workflow** |
-| `sbatch/baseline.sh` | Baseline evaluation (multi-task) | Baseline benchmarks |
-| `sbatch/local.sh` | Local evaluation (no SLURM) | Interactive testing |
-| `sbatch/_job.sh` | Single SLURM job for one config | Internal (called by `run.sh`) |
-| `sbatch/_array.sh` | Array job for layer reuse | **Deprecated** |
-| `setup_tmpdir_venv.sh` | Create fast TMPDIR venv | Interactive sessions only |
 
 ---
 
@@ -61,23 +45,35 @@ bash sbatch/run.sh --force            # All configs
 
 ```
 v2/
-├── generation_functions.py    # Core generation algorithms (active/dev)
-├── experiments/               # Versioned generation code per experiment
-│   ├── 00_baseline/
-│   │   └── generation_functions.py
-│   └── 01_adaptive_skip/
-│       └── generation_functions.py
-├── results/                   # Experiment outputs
-│   └── {experiment}/{task}/{config}/
-├── artifacts/                 # Git-tracked summaries
-│   └── {experiment}/{task}/{config}/summary.json
+├── eval.py                       # Shared evaluation harness
+├── generation_functions.py       # Default generation code (chatbot/app)
+├── experiments/                  # Self-contained experiments
+│   ├── _template/                # Scaffold for new experiments
+│   │   ├── README.md, proposal.md, results.md, tasks.md
+│   │   ├── config.yaml
+│   │   ├── generation_functions.py
+│   │   └── sbatch/              # run.sh + _job.sh
+│   └── 00_baseline/             # Layer reuse baseline
+│       ├── README.md, proposal.md, results.md, tasks.md
+│       ├── config.yaml
+│       ├── generation_functions.py
+│       ├── sbatch/              # run.sh + _job.sh
+│       ├── artifacts/           # Git-tracked summary.json files
+│       ├── results/             # Full results (gitignored)
+│       └── logs/                # SLURM logs (gitignored)
+├── sbatch/                      # Shared utilities
+│   ├── common.sh                # Venv/env setup functions
+│   ├── local.sh                 # Local evaluation (no SLURM)
+│   └── *.sh                     # Deprecated (reference only)
 └── docs/
-    ├── STATUS.md              # Current state and experiments
-    ├── operations.md          # How to run experiments
-    ├── concepts/              # Research ideas
-    ├── experiments/           # Experiment documentation
-    ├── reference/             # Cluster reference
-    └── _templates/            # Document templates
+    ├── STATUS.md                # Project status + priority stack
+    ├── README.md                # This file
+    ├── EXPERIMENTS_STATUS.md    # Experiment tracking
+    ├── operations.md            # How to run experiments
+    ├── concepts/                # Research ideas
+    ├── experiments/             # Cross-cutting experiment docs
+    ├── references/              # Literature + PACE cluster docs
+    └── _templates/              # Document templates
 ```
 
 ---
@@ -90,7 +86,7 @@ v2/
 | Confidence Decoding | `threshold=0.9` | Unmask high-confidence tokens together |
 | Layer Reuse | `reuse_k=2` | Skip layers every k-th diffusion step |
 | Layer Subset | `layer_subset=middle` | Which 12 layers to apply reuse |
-| Experiment Version | `experiment_name=01_new` | Load generation code from `experiments/{name}/` |
+| Experiment Version | `experiment_name=00_baseline` | Load generation code from `experiments/{name}/` |
 
 ---
 
@@ -99,6 +95,8 @@ v2/
 | Resource | Link |
 |----------|------|
 | Project Status | [STATUS.md](STATUS.md) |
+| Experiment Tracking | [EXPERIMENTS_STATUS.md](EXPERIMENTS_STATUS.md) |
 | Operations Guide | [operations.md](operations.md) |
-| PACE Reference | [reference/pace-cluster.md](reference/pace-cluster.md) |
+| PACE Reference | [references/pace-cluster.md](references/pace-cluster.md) |
 | Concepts | [concepts/](concepts/) |
+| 00_baseline | [experiments/00_baseline/](../experiments/00_baseline/) |
