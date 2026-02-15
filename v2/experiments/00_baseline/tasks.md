@@ -26,7 +26,7 @@
 
 ---
 
-## Phase 4: Bug Fixes [TODO]
+## Phase 4: Bug Fixes [NEXT]
 
 Code review (Feb 2026) found 4 bugs in `generation_functions.py` that invalidate
 throughput measurements. Accuracy measurements are still valid. Bugs are listed
@@ -162,7 +162,50 @@ the block cache optimization.
 
 ---
 
+## Pre-fix Baseline (Feb 14, 2026)
+
+Ran k1_first locally with `--limit 10` on GSM8K before fixing any bugs.
+This establishes a "before" baseline for throughput comparisons.
+
+| Config | Accuracy | Tokens/s | GPU | Notes |
+|--------|----------|----------|-----|-------|
+| k1_first (limit 10) | 60.0% | 47.63 | Quadro RTX 6000 | Pre-fix, buggy code |
+
+---
+
+## Next Session Checklist
+
+Start here next time. Work in this order:
+
+1. **Fix Bug 1** (CRITICAL) - Cache return type instead of calling `original_forward()`
+   on the reuse path. This is the most impactful fix: it will make layer reuse
+   actually skip computation.
+
+2. **Fix Bug 3** (quick) - Change `range(1, min(n, subset_size))` to
+   `range(1, subset_size + 1)` so "first" patches 12 layers like middle/last.
+
+3. **Run k1_first again** with `--limit 10` after fixes 1+3 to compare throughput.
+   Expect similar tok/s since k=1 doesn't reuse. Then run k2_first and k3_first
+   to verify they show higher tok/s.
+
+4. **Design discussion: Separating reuse mechanisms** (Bug 2) - This is a bigger
+   refactor. Decide whether to separate block-level and layer-level reuse before
+   fixing Bug 2. See "Design: Separating Reuse Mechanisms" section above.
+
+5. **Fix Bug 4** after Bug 2 is resolved - layer cache trimming depends on how
+   caches are structured after the Bug 2 refactor.
+
+6. **Add comments to generation_functions.py** - The code is complex; add
+   explanatory comments for the block diffusion loop, small-block iteration,
+   layer patching, and reuse state management.
+
+7. **Re-run all 9 configs** on GSM8K with `--limit 10` to validate fixes, then
+   submit full SLURM runs.
+
+---
+
 ## Known Issues
 - Layer reuse does NOT apply to loglikelihood tasks (MMLU, GPQA) - see docs/experiments/00-layer-reuse-loglikelihood.md
 - GPQA dataset requires HuggingFace authentication - see docs/experiments/01-gpqa-authentication.md
 - Throughput metrics missing for loglikelihood tasks - see docs/experiments/02-missing-throughput-tracking.md
+- `transformers>=5.0.0` breaks model loading (KeyError: 'default' in ROPE_INIT_FUNCTIONS) - pinned to `<5.0.0` in pyproject.toml
