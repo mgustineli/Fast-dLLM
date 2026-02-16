@@ -200,7 +200,7 @@ logic exactly — block cache and layer reuse are independent and orthogonal:
                     |    +-- NO:  return cached output  |
                     |                                   |
                     |  For 16 UNPATCHED layers:         |
-                    |    always compute normally         |
+                    |    always compute normally        |
                     +-----------------------------------+
 ```
 
