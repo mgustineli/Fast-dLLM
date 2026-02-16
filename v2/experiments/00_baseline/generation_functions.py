@@ -287,11 +287,15 @@ class Fast_dLLM_QwenForCausalLM:
 
                             if should_recompute:
                                 # Full Compute — BUILDS block_past_key_values.
-                                # Layer reuse must be disabled here: each layer's
-                                # attention must run to populate its block cache
-                                # entry. Skipping a layer would leave a None entry,
-                                # crashing the small-block path later.
-                                reuse_state["enabled"] = False
+                                # Force all layer wrappers to recompute (not skip)
+                                # by setting count to 0 (0 % k == 0 for all k).
+                                # This ensures:
+                                # 1. All layers run original_forward → block cache
+                                #    entries populated (no None crashes)
+                                # 2. Wrappers cache the full 32-token output, so
+                                #    subsequent small-block reuse steps can slice
+                                #    the correct positions via replace_position
+                                reuse_state["count"] = 0
                                 output = self.forward(
                                     input_ids=x_t[:, -block_size:],
                                     use_cache=True,
@@ -300,7 +304,6 @@ class Fast_dLLM_QwenForCausalLM:
                                     use_block_cache=True,
                                     block_size=block_size,
                                 )
-                                reuse_state["enabled"] = True
                                 logits, block_past_key_values = (
                                     output.logits,
                                     output.block_past_key_values,

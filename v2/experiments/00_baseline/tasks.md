@@ -40,14 +40,18 @@ throughput measurements. Accuracy measurements are still valid.
 See [Bug Details](#bug-details) below for full descriptions and fixes.
 
 ## Phase 5: Re-validation [PARTIAL]
-- [x] Run all 9 configs on GSM8K with `--limit 10` (see results below)
-- [ ] Re-run `first` subset configs (k1/k2/k3) on latest code (`6c8822f`) — currently stale (ran on `6f96d95`)
-- [ ] Investigate Bug 5 (cross-small-block stale cache) — see below
+- [x] Run all 9 configs on GSM8K `--limit 10` — Feb 15 (see Run 1 results below)
+- [x] Identify Bug 5 (cross-small-block stale cache) — wrappers disabled during full-block
+  forwards prevented caching, causing stale hidden states on subsequent small-block reuse
+- [x] Fix Bug 5 attempt: `reuse_state["count"] = 0` instead of `reuse_state["enabled"] = False`
+  during full-block forwards — forces wrappers to recompute & cache 32-token outputs
+- [x] Re-run all 9 configs on GSM8K `--limit 10` — Feb 16 (see Run 2 results below)
+- [ ] Investigate remaining middle/last accuracy collapse — see [Phase 6](#phase-6-investigation)
 - [ ] Submit full SLURM runs once validated
 
 ---
 
-## Results: GSM8K limit_10 (Feb 15, 2026)
+## Results: GSM8K limit_10 — Run 1 (Feb 15, 2026)
 
 All 9 configs ran via `sbatch/run_locally.sh --limit 10`. Results in `artifacts/gsm8k_limit_10/`.
 
@@ -64,77 +68,218 @@ All 9 configs ran via `sbatch/run_locally.sh --limit 10`. Results in `artifacts/
 | k1_first | 60% | 47.52 | 3,540 | 74.5 | `6f96d95` | No reuse (k=1) |
 | k1_middle | 70% | 43.37 | 3,540 | 81.6 | `6d2a9a8` | No reuse (k=1) |
 | k1_last | 70% | 42.94 | 3,540 | 82.4 | `6d2a9a8` | No reuse (k=1) |
-| k2_first | 70% | 36.74 | 3,092 | 84.2 | `6f96d95` | OK accuracy, slow |
-| k3_first | 60% | 37.87 | 3,508 | 92.6 | `6f96d95` | OK accuracy, slow |
+| k2_first | 70% | 36.74 | 3,092 | 84.2 | `6f96d95` | OK |
+| k3_first | 60% | 37.87 | 3,508 | 92.6 | `6f96d95` | OK |
 | k2_middle | **10%** | 82.81 | 18,493 | 223.3 | `6c8822f` | **COLLAPSED** |
 | k2_last | **10%** | 83.73 | 18,717 | 223.6 | `6c8822f` | **COLLAPSED** |
 | k3_middle | **0%** | 96.57 | 20,350 | 210.7 | `6c8822f` | **COLLAPSED** |
 | k3_last | **0%** | 88.05 | 20,350 | 231.1 | `6c8822f` | **COLLAPSED** |
 
-### Observations
+## Results: GSM8K limit_10 — Run 2 (Feb 16, 2026)
 
-1. **k1 configs (all subsets): 60-70% accuracy.** Expected — k=1 means `_patch_layers_helper`
-   returns early without patching, so subset is irrelevant. Throughput variance (~43-48 tok/s)
-   is run-to-run noise.
+All 9 configs on the same commit, with Bug 5 fix (`reuse_state["count"] = 0`
+instead of `reuse_state["enabled"] = False` during full-block forwards).
 
-2. **k2/k3 with `first` subset: 60-70% accuracy, normal token counts (~3K).**
-   Layer reuse works without destroying quality. But these ran on **old code** (Group A)
-   where Bug 2 was unfixed — the old `should_recompute` forced full-block forwards every
-   k-th step, so layer wrappers cached 32-token outputs and reused sliced versions.
-   **Must re-run on latest code to confirm.**
+| Config | Accuracy | Tokens/s | Tokens | Time (s) | Notes |
+|--------|----------|----------|--------|----------|-------|
+| k1_first | 60% | 44.15 | 3,540 | 80.2 | No reuse (k=1) |
+| k1_middle | 70% | 43.22 | 3,540 | 81.9 | No reuse (k=1) |
+| k1_last | 70% | 43.70 | 3,540 | 81.0 | No reuse (k=1) |
+| k2_first | 70% | 41.58 | 3,572 | 85.9 | OK |
+| k2_middle | **10%** | 41.43 | 3,572 | 86.2 | **Wrong answers** |
+| k2_last | **10%** | 42.04 | 3,572 | 85.0 | **Wrong answers** |
+| k3_first | 60% | 38.65 | 3,316 | 85.8 | OK |
+| k3_middle | **0%** | 38.64 | 3,316 | 85.8 | **Wrong answers** |
+| k3_last | **0%** | 38.70 | 3,316 | 85.7 | **Wrong answers** |
 
-3. **k2/k3 with `middle`/`last` subset: 0-10% accuracy, ~18-20K tokens.**
-   Model fails to converge — diffusion iterations don't unmask tokens properly, so
-   generation runs to max_new_tokens producing gibberish. These ran on the **latest code**
-   (Group C) with all bug fixes.
+### What the Bug 5 fix solved
 
-4. **Throughput is misleading for collapsed configs.** The high tok/s (83-97) reflects
-   many wasted iterations, not useful generation speed.
+1. **Token counts normalized.** Collapsed configs went from 18-20K tokens → ~3,300-3,500
+   (matching healthy configs). The model no longer generates runaway gibberish.
+2. **Throughput normalized.** Anomalous 83-97 tok/s (wasted iterations) → ~38-42 tok/s
+   (consistent with all configs).
 
-### Investigation: Middle/Last Layer Collapse
+### What the Bug 5 fix did NOT solve
 
-Two factors contribute to the collapse:
+**Accuracy for k2/k3 middle/last is still 0-10%.** But the failure mode changed:
+- **Run 1**: Model couldn't converge — 18-20K tokens of gibberish
+- **Run 2**: Model converges normally (~3,500 tokens) but produces wrong answers
 
-**Factor 1: Cross-small-block stale cache (Bug 5 — code issue)**
+### Key evidence: Old full GSM8K results disprove "layer sensitivity" hypothesis
 
-When a full-block forward runs (`should_recompute=True`), `reuse_state["enabled"]=False`
-prevents layer wrappers from updating their cache. When the next small block starts and
-a layer wrapper hits a reuse step (`step % k != 0`), it returns the **stale cache** from
-the previous small block's positions (e.g., returning hidden states from positions 0-8
-when processing positions 8-16). The shapes match (`[B, 8, D]` == `[B, 8, D]`), so no
-fallback is triggered — the wrapper silently returns wrong-position hidden states.
+The full GSM8K runs (Phase 1, Jan 2026, commit `8e18baac`) show **uniform accuracy
+across all subsets** for each k value:
 
-This affects ALL subsets, but the impact differs by layer location.
+| k | first | middle | last |
+|---|-------|--------|------|
+| 1 | 80.44% | 80.44% | 80.44% |
+| 2 | 73.69% | 73.62% | 73.77% |
+| 3 | 67.17% | 67.55% | 67.70% |
 
-**Factor 2: Layer sensitivity (architectural)**
+The accuracy drop from k1→k2→k3 proves layer reuse WAS affecting accuracy (it wasn't
+no-op). But the uniformity across subsets proves **all subsets work equally well** in
+the old code. Middle and last layers are NOT inherently worse for reuse. Something
+specific to our bug-fixed code breaks them.
 
-- **First (layers 1-12):** Stale hidden states are corrected by layers 13-27 via
-  self-attention. Early layers capture lower-level features that are more position-tolerant.
-- **Middle (layers 8-19) / Last (layers 16-27):** Fewer (or no) downstream layers to
-  correct stale representations. These layers are output-sensitive — stale hidden states
-  produce corrupted logits that compound across diffusion iterations.
+---
 
-**Note on Bug 2 interaction:** In Group A (Bug 2 unfixed), the old `should_recompute`
-forced full-block forwards every k-th step WITH layer wrappers enabled. This meant
-wrappers cached 32-token outputs, and subsequent small-block reuses sliced them correctly
-via `replace_position`. In Group C (Bug 2 fixed), full-block forwards disable wrappers
-entirely, so caching only happens during 8-token small-block forwards — making the
-cross-small-block stale cache issue (Bug 5) more impactful.
+## Phase 6: Investigation [TODO]
 
-### Next Steps
+### Context for new sessions
 
-1. **Fix Bug 5**: Clear layer caches after full-block forwards to prevent stale reuse:
-   ```python
-   if should_recompute:
-       reuse_state["enabled"] = False
-       for lc in reuse_state.get("caches", {}).values():
-           lc.pop("last_output", None)
-       output = self.forward(...)
-       reuse_state["enabled"] = True
-   ```
-2. **Re-run all 9 configs on the same commit** with Bug 5 fixed
-3. **If middle/last still collapse after Bug 5 fix**, the conclusion is that layer reuse
-   is only viable for early layers (an inherent architectural limitation)
+**The problem**: Our refactored `generation_functions.py` produces correct results for
+the `first` layer subset but collapses to 0-10% accuracy for `middle`/`last` (k≥2).
+The old code (commit `8e18baac`) produced **uniform accuracy across all subsets**
+(~73% for k=2, ~67% for k=3 on full GSM8K). So the collapse is a regression in our
+code, not an architectural limitation.
+
+**How layer reuse works**: We monkey-patch 12 transformer layer `.forward()` methods
+with wrappers (`_patch_layers_helper` in `generation_functions.py`). On recompute steps
+(`step % k == 0`), wrappers call `original_forward()` and cache the output. On reuse
+steps (`step % k != 0`), wrappers return the cached output (sliced via `replace_position`
+if the cached shape [B,32,D] doesn't match the input shape [B,8,D]).
+
+**How block diffusion works**: Each block of 32 tokens is denoised iteratively. Within
+each block, 4 small blocks of 8 tokens are processed. The `should_recompute` flag decides
+whether to run a full-block forward (32 tokens, builds `block_past_key_values`) or a
+small-block forward (8 tokens, reads from `block_past_key_values`). Layer reuse only
+activates during small-block forwards.
+
+**What we changed from old code (4 bug fixes)** — see [Bug Details](#bug-details) below:
+- Bug 1 fix: Removed `original_forward()` call on the reuse path (was used for isinstance
+  check). This means reuse steps now truly skip computation.
+- Bug 2 fix: Removed `reuse_k <= 1` and `reuse_step % reuse_k == 0` from `should_recompute`.
+  This was conflating block cache and layer reuse logic. **Side-effect lost**: the old code
+  forced full-block forwards every k steps, keeping layer caches fresh with 32-token outputs.
+- Bug 3 fix: `first` subset now patches 12 layers (was 11).
+- Bug 4 fix: Layer caches registered in `reuse_state["caches"]` for batch trim logic.
+
+**What we tried so far** (Feb 16, Bug 5 fix): Changed full-block forward handling from
+`reuse_state["enabled"] = False` (disables wrappers entirely — no caching) to
+`reuse_state["count"] = 0` (forces wrappers to recompute — `0 % k == 0` for all k).
+This fixed the runaway gibberish (18-20K tokens → ~3,500) but accuracy stayed at 0-10%.
+
+**Key files**:
+- Current code: `v2/experiments/00_baseline/generation_functions.py`
+- Old working code: `git show 8e18baac:v2/generation_functions.py`
+- Experiment proposal: `v2/experiments/00_baseline/proposal.md`
+- Results: `v2/experiments/00_baseline/artifacts/gsm8k/` (full) and `gsm8k_limit_10/`
+
+### Reference: Old code's load-bearing bugs
+
+The old code had 4 known bugs. Two created behavioral side-effects that may have been
+essential for correctness:
+
+1. **Bug 1 side-effect**: On the reuse path, `isinstance(original_forward(*args, **kwargs), tuple)`
+   ran the full layer computation as a side-effect. The result was discarded (cached value
+   returned), but the computation ran attention + feedforward. This means the attention
+   mechanism still accessed `block_past_key_values`, potentially keeping block cache entries
+   consistent. **With Bug 1 fixed, the reuse path truly skips all computation.**
+
+2. **Bug 2 side-effect**: `reuse_step % reuse_k == 0` in `should_recompute` forced
+   full-block forwards every k-th step (not just when block cache was missing or masks
+   present). This provided more frequent block cache AND layer cache refreshes. During
+   these forced full-block forwards, wrappers stayed enabled and saw `step % k == 0`
+   (same counter) → they recomputed and cached fresh 32-token outputs. **With Bug 2
+   fixed, full-block forwards only happen when `block_past_key_values is None` or when
+   there's a mask at the small block start position.**
+
+### Investigation checklist
+
+Start with A (quick code read), then B and C (each is a small code change + limit_10
+run). D and E provide supporting evidence. F is the fallback if nothing else works.
+
+- [ ] **A. Check `replace_position` propagation** (code read, ~30 min)
+
+  The wrapper slices cached 32-token output using `kwargs.get("replace_position")`.
+  But `replace_position` is passed to `self.forward()` (the model), not directly to
+  individual layers. If the model doesn't pass it through to layer kwargs, the wrapper
+  always sees `replace_position=None` → `replace_pos = 0` → always slices positions
+  0-7 regardless of which small block is being processed.
+
+  **How to check**: Read the model's forward method. The model is
+  `Efficient-Large-Model/Fast_dLLM_v2_7B` (Qwen-based). Trace how `replace_position`
+  flows from `model.forward()` → `model.model.forward()` → individual `layer.forward()`
+  calls. Check the HuggingFace model files or `modeling_qwen2.py`.
+
+  **If NOT propagated**: The wrapper's slicing is broken for small blocks 1-3 (always
+  returns positions 0-7). This would affect all subsets equally in the old code (uniform
+  degradation), but could interact differently with our bug fixes to cause subset-dependent
+  failure. This finding would change our entire approach.
+
+  **If propagated**: Slicing works correctly and the issue is elsewhere.
+
+- [ ] **B. Test: restore periodic full-block forwards** (code change + run, ~2 hours)
+
+  Add back `reuse_step % reuse_k == 0` to `should_recompute` (from the old Bug 2).
+  Keep the Bug 5 fix (`count=0`), do NOT revert to `enabled=False`. This tests whether
+  more frequent cache refreshes rescue middle/last accuracy.
+
+  In `generation_functions.py`, change the `should_recompute` block (~line 280) to:
+  ```python
+  should_recompute = (
+      block_past_key_values is None
+      or (reuse_step % reuse_k == 0)  # periodic cache refresh
+      or (x_t[:, -block_size + small_block_start_idx] == mask_id).any()
+  )
+  ```
+  Run all 9 configs with `--limit 10`.
+
+  **If accuracy recovers** (~60-70% for middle/last): The issue is that our current code
+  doesn't refresh caches frequently enough. We then need to find a way to refresh caches
+  without forcing expensive full-block forwards every k steps.
+
+  **If accuracy stays at 0-10%**: The issue is NOT cache refresh frequency. Move to C.
+
+- [ ] **C. Test: reinstate Bug 1 side-effect** (code change + run, ~2 hours)
+
+  Add back the `original_forward()` call on the reuse path (as a diagnostic, discarding
+  the result). This tests whether the side-effect computation is necessary for correctness.
+
+  In `generation_functions.py`, in the wrapper's reuse path (~line 77-110), add before
+  the return:
+  ```python
+  # Diagnostic: run original_forward as side-effect (like old Bug 1)
+  _ = original_forward(*args, **kwargs)
+  ```
+  Run all 9 configs with `--limit 10`.
+
+  **If accuracy recovers**: Bug 1's side-effect was load-bearing. The attention computation
+  in `original_forward` was updating block cache entries or other mutable state. We need
+  to understand what state and find a targeted fix (not the full side-effect).
+
+  **If accuracy stays at 0-10%**: Bug 1 side-effect is not the cause. The issue is purely
+  in Bug 2 (should_recompute frequency) or something else entirely.
+
+- [ ] **D. Add instrumentation** (code change, ~1 hour)
+
+  Add counters/logging to the wrapper to understand actual behavior:
+  - Per-layer: count of recompute vs reuse decisions per block
+  - Cache tensor shape at each reuse decision ([B,32,D] vs [B,8,D])
+  - `replace_position` value received (or None) at each wrapper call
+  - Whether the shape-match branch or slice branch is taken
+
+  Run one config (e.g., k2_middle) with `--limit 1` and analyze the log.
+
+- [ ] **E. Run old code on limit_10** (checkout + run, ~2 hours)
+
+  `git stash && git checkout 8e18baac -- v2/generation_functions.py` and run all 9
+  configs with `--limit 10`. This gives a direct comparison on the small sample.
+  Restore after: `git checkout HEAD -- v2/generation_functions.py && git stash pop`.
+
+  **Purpose**: Confirm the old code gives ~60-70% for middle/last on limit_10 (proving
+  the limit_10 sample is viable for detecting the regression).
+
+- [ ] **F. Diff-driven bisection** (multiple runs, ~4-8 hours)
+
+  If A-C don't identify the cause, systematically revert individual bug fixes (one at
+  a time) on the current code and test each:
+  1. Revert Bug 1 fix only (reinstate isinstance + original_forward)
+  2. Revert Bug 2 fix only (add back `reuse_k <= 1` and `reuse_step % reuse_k == 0`)
+  3. Revert Bug 3 fix only (change `range(1, subset_size + 1)` back to `range(1, min(n, subset_size))`)
+  4. Revert Bug 4 fix only (remove `reuse_state["caches"]` registration)
+
+  Each revert + run isolates one fix. The one that recovers accuracy is the culprit.
 
 ---
 
@@ -232,17 +377,22 @@ layer is skipped (returns cached hidden states), its block cache entry is never
 created, causing a `NoneType` crash when the subsequent small-block forward
 tries to read it.
 
-**Constraint**: Layer reuse must be disabled during full-block forwards.
+**Constraint**: All layer wrappers must recompute (not skip) during full-block forwards.
 
-This means layer reuse only activates on the **small-block fast path** (8 tokens),
-which reads from an already-built block cache. The expensive full-block forwards
-always run all layers at full cost.
+~~**Old approach (broken)**: Set `reuse_state["enabled"] = False` during full-block
+forwards. This prevented wrappers from caching, leaving them with stale outputs
+for subsequent small-block reuse — causing middle/last collapse.~~
+
+**Current approach**: Set `reuse_state["count"] = 0` during full-block forwards.
+Since `0 % k == 0` for all k, every wrapper's `should_recompute` is True → they
+call `original_forward()` (building block cache) AND cache the 32-token output
+(available for subsequent small-block reuse via `replace_position` slicing).
 
 ```
-should_recompute (original block cache logic)
+should_recompute (block cache logic)
   |
   +-- YES: full block (32 tokens) — BUILDS block_past_key_values
-  |   Layer reuse DISABLED (all layers must run to populate block cache)
+  |   Wrappers FORCED TO RECOMPUTE (count=0): all layers run + cache 32-token output
   |
   +-- NO: small block (8 tokens) — READS block_past_key_values
       Layer reuse ENABLED (skipped layers return cached hidden states)
