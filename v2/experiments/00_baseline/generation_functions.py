@@ -93,7 +93,7 @@ def _patch_layers_helper(model, reuse_k, subset_name, reuse_state):
                     else:
                         # Shapes mismatch. Use replace_position to find the correct slice.
                         # replace_position indicates where in the block we are currently writing.
-                        replace_pos = kwargs.get("replace_position", 0)
+                        replace_pos = kwargs.get("replace_position") or 0
 
                         # Safety Check: Ensure slice is within bounds
                         if replace_pos + current_len <= cached_tensor.shape[1]:
