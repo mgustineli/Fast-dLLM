@@ -30,7 +30,7 @@ def _patch_layers_helper(model, reuse_k, subset_name, reuse_state):
 
     if subset_name == "first":
         # IMPORTANT: Skip Layer 0. It allocates memory for the cache.
-        target_indices = list(range(1, min(n, subset_size)))
+        target_indices = list(range(1, subset_size + 1))
     elif subset_name == "middle":
         start = max(0, n // 2 - subset_size // 2)
         target_indices = list(range(start, start + subset_size))
@@ -39,10 +39,14 @@ def _patch_layers_helper(model, reuse_k, subset_name, reuse_state):
 
     original_forwards = {}
 
+    # Registry so batch_sample's trim logic can access per-layer caches
+    reuse_state["caches"] = {}
+
     # 2. Define the Wrapper Function (The Closure)
     def create_wrapper(original_forward, layer_idx):
-        # Local cache for this specific layer
+        # Local cache for this specific layer, also registered in reuse_state
         layer_cache = {}
+        reuse_state["caches"][layer_idx] = layer_cache
 
         def wrapper(self_layer, *args, **kwargs):
             # If reuse is globally disabled, run normal
@@ -64,7 +68,8 @@ def _patch_layers_helper(model, reuse_k, subset_name, reuse_state):
                 # Cache the output (Hidden States are usually the first element if tuple, or just the tensor)
                 # Transformers usually return (hidden_states, present_key_values, ...)
                 # We only cache the tensor part if it's a tuple, or the tensor itself.
-                if isinstance(output, tuple):
+                layer_cache["is_tuple"] = isinstance(output, tuple)
+                if layer_cache["is_tuple"]:
                     layer_cache["last_output"] = output[0]
                 else:
                     layer_cache["last_output"] = output
@@ -99,13 +104,10 @@ def _patch_layers_helper(model, reuse_k, subset_name, reuse_state):
                             # If we can't slice correctly, we must fallback to recompute to avoid crash
                             return original_forward(*args, **kwargs)
 
-                    # Re-wrap in tuple if the original output was a tuple
-                    # (Most HF models return tuple, but standard usage often just takes [0])
-                    return (
-                        (output_tensor,)
-                        if isinstance(original_forward(*args, **kwargs), tuple)
-                        else output_tensor
-                    )
+                    if layer_cache.get("is_tuple", False):
+                        return (output_tensor,)
+                    else:
+                        return output_tensor
 
                 else:
                     return original_forward(*args, **kwargs)
@@ -271,16 +273,12 @@ class Fast_dLLM_QwenForCausalLM:
                             # SYNC THE LAYERS WITH THE CURRENT STEP
                             reuse_state["count"] = reuse_step
 
-                            # Determine if we need to run a full computation or if we can reuse
-                            # 1. Must recompute if no cache exists
-                            # 2. Must recompute if k=1 (always)
-                            # 3. Must recompute on specific mod steps (0, k, 2k...)
-                            # 4. Must recompute if current position contains masks (safety check)
-
+                            # Block cache decision: full block vs small block.
+                            # This is the ORIGINAL Fast-dLLM logic — independent
+                            # of layer reuse (which is handled by the monkey-patched
+                            # wrappers via reuse_state["count"]).
                             should_recompute = (
                                 block_past_key_values is None
-                                or reuse_k <= 1
-                                or (reuse_step % reuse_k == 0)
                                 or (
                                     x_t[:, -block_size + small_block_start_idx]
                                     == mask_id

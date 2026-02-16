@@ -1,12 +1,12 @@
 {
   "task": "gsm8k",
-  "config": "k1_first",
-  "timestamp": "20260215_163202",
+  "config": "k3_first",
+  "timestamp": "20260215_164742",
   "accuracy": 0.6,
   "throughput": {
-    "tokens_generated": 3540,
-    "total_time_s": 74.49,
-    "tokens_per_s": 47.52
+    "tokens_generated": 3508,
+    "total_time_s": 92.64,
+    "tokens_per_s": 37.87
   },
   "gpu_info": {
     "gpu_available": true,
@@ -29,7 +29,7 @@
   },
   "model_args": {
     "model_path": "Efficient-Large-Model/Fast_dLLM_v2_7B",
-    "reuse_k": 1,
+    "reuse_k": 3,
     "layer_subset": "first",
     "use_block_cache": true,
     "show_speed": true,

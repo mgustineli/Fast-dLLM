@@ -26,13 +26,13 @@
 
 ---
 
-## Phase 4: Bug Fixes [NEXT]
+## Phase 4: Bug Fixes [IN PROGRESS]
 
 Code review (Feb 2026) found 4 bugs in `generation_functions.py` that invalidate
 throughput measurements. Accuracy measurements are still valid. Bugs are listed
 in priority order.
 
-### Bug 1 (CRITICAL): Reuse path calls `original_forward()` to check return type
+### Bug 1 (CRITICAL) [FIXED - Feb 15]: Reuse path calls `original_forward()` to check return type
 
 **File**: `generation_functions.py:104-108`
 **Impact**: Throughput measurements are INVALID - no computation is actually saved
@@ -66,7 +66,7 @@ else:
 **Verification**: k=2 and k=3 should show measurably higher tokens/s than k=1
 after the fix.
 
-### Bug 2 (MODERATE): k=1 never uses block cache fast path
+### Bug 2 (MODERATE) [FIXED - Feb 15]: k=1 never uses block cache fast path
 
 **File**: `generation_functions.py:280-288`
 **Impact**: k=1 runs are slower than the original code, making it a bad baseline
@@ -98,7 +98,7 @@ and layer-level reuse (our monkey-patching) are two separate mechanisms that are
 currently conflated in this single `should_recompute` check. They should probably
 be separated. See "Design: Separating Reuse Mechanisms" below.
 
-### Bug 3 (MODERATE): "first" subset patches 11 layers, not 12
+### Bug 3 (MODERATE) [FIXED - Feb 15]: "first" subset patches 11 layers, not 12
 
 **File**: `generation_functions.py:33`
 **Impact**: Uneven comparison - "first" applies reuse to 11 layers while
@@ -115,7 +115,7 @@ target_indices = list(range(1, subset_size + 1))  # range(1,13) = 12 layers
 Layer 0 is skipped (it allocates cache memory), so we should extend to layer 12
 to still get 12 target layers.
 
-### Bug 4 (MINOR): Dead code - layer caches never trimmed
+### Bug 4 (MINOR) [FIXED - Feb 15]: Dead code - layer caches never trimmed
 
 **File**: `generation_functions.py:400-408`
 **Impact**: After batch trimming (finished samples removed), layer caches have
@@ -171,35 +171,51 @@ This establishes a "before" baseline for throughput comparisons.
 |--------|----------|----------|-----|-------|
 | k1_first (limit 10) | 60.0% | 47.63 | Quadro RTX 6000 | Pre-fix, buggy code |
 
+## Post-fix Results (Feb 15, 2026)
+
+Fixed Bug 1 (cache `is_tuple` flag instead of calling `original_forward()` on reuse
+path) and Bug 3 (`range(1, subset_size + 1)` so "first" patches 12 layers).
+
+| Config | Accuracy | Tokens/s | GPU | Notes |
+|--------|----------|----------|-----|-------|
+| k1_first (limit 10) | 60.0% | 47.52 | Quadro RTX 6000 | Control - no reuse (expected same) |
+| k2_first (limit 10) | 70.0% | 36.74 | Quadro RTX 6000 | Slower than k1 |
+| k3_first (limit 10) | 60.0% | 37.87 | Quadro RTX 6000 | Slower than k1 |
+
+**Observation: Layer reuse does not improve throughput (and may hurt it).**
+
+k2 and k3 are ~20-23% *slower* than k1, despite skipping layer computation on
+reuse steps. Likely causes:
+
+1. **Python monkey-patching overhead**: The wrapper closure runs on every forward
+   call for 12 layers. At batch_size=1, the per-call CPU overhead (dict lookups,
+   condition checks, tensor slicing) outweighs the GPU compute saved by skipping
+   a single layer forward.
+2. **Bug 2 still present**: The `should_recompute` flag in `batch_sample()` forces
+   full-block forwards on recompute steps (every k-th step), disrupting the block
+   cache optimization that the original code relies on for speed.
+3. **Batch size 1**: GPU utilization is already low; skipping layers saves minimal
+   wall-clock time since the GPU is not saturated.
+
+**Decision**: Focus on accuracy for now. Throughput optimization is a separate
+concern that likely requires a different approach (e.g., native CUDA-level layer
+skipping, or larger batch sizes to amortize overhead). Bug 2 fix may also help
+by restoring the block cache fast path.
+
 ---
 
-## Next Session Checklist
+## Next Steps
 
-Start here next time. Work in this order:
-
-1. **Fix Bug 1** (CRITICAL) - Cache return type instead of calling `original_forward()`
-   on the reuse path. This is the most impactful fix: it will make layer reuse
-   actually skip computation.
-
-2. **Fix Bug 3** (quick) - Change `range(1, min(n, subset_size))` to
-   `range(1, subset_size + 1)` so "first" patches 12 layers like middle/last.
-
-3. **Run k1_first again** with `--limit 10` after fixes 1+3 to compare throughput.
-   Expect similar tok/s since k=1 doesn't reuse. Then run k2_first and k3_first
-   to verify they show higher tok/s.
-
-4. **Design discussion: Separating reuse mechanisms** (Bug 2) - This is a bigger
-   refactor. Decide whether to separate block-level and layer-level reuse before
-   fixing Bug 2. See "Design: Separating Reuse Mechanisms" section above.
-
-5. **Fix Bug 4** after Bug 2 is resolved - layer cache trimming depends on how
-   caches are structured after the Bug 2 refactor.
-
-6. **Add comments to generation_functions.py** - The code is complex; add
-   explanatory comments for the block diffusion loop, small-block iteration,
-   layer patching, and reuse state management.
-
-7. **Re-run all 9 configs** on GSM8K with `--limit 10` to validate fixes, then
+1. ~~**Fix Bug 1** (CRITICAL)~~ - DONE (Feb 15)
+2. ~~**Fix Bug 3** (quick)~~ - DONE (Feb 15)
+3. ~~**Validate fixes** with k1/k2/k3 limit-10 runs~~ - DONE (Feb 15, see above)
+4. ~~**Fix Bug 2** (separate block cache from layer reuse)~~ - DONE (Feb 15).
+   Simpler than expected: just removed the two extra conditions from
+   `should_recompute`, restoring the original block cache logic. No refactor needed.
+5. ~~**Fix Bug 4** (wire layer caches into `reuse_state["caches"]`)~~ - DONE (Feb 15).
+   Registered each `layer_cache` dict into `reuse_state["caches"]` during
+   `create_wrapper()`, so the existing trim code at line 395 now works.
+6. **Re-run all 9 configs** on GSM8K with `--limit 10` to validate, then
    submit full SLURM runs.
 
 ---
