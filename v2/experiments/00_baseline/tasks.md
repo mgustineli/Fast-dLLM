@@ -5,24 +5,35 @@
 - [x] Create generation_functions.py with layer reuse logic
 - [x] Set up smart runner (run.sh) and job template (_job.sh)
 
-## Phase 1: GSM8K Full Runs [DONE]
+## Phase 1: GSM8K Full Runs [DONE — RESULTS SUSPECT]
 - [x] Run all 9 configs on GSM8K (full, 1319 samples)
 - [x] Verify all 9 summary.json files in artifacts/gsm8k/
 - [x] Record accuracy and throughput in results.md
 
-## Phase 2: MMLU Full Runs [DONE]
+**Note**: These runs used the buggy code (commit `ce2817c` / `8e18baac`). Throughput
+is invalid (Bug 1). Accuracy uniformity across subsets (~73.7% for all k=2, ~67.5%
+for all k=3) is likely an artifact of Bug 1's side-effect — `original_forward()` ran
+on every reuse step, keeping block cache state coherent. Full re-runs needed after
+Phase 6 investigation resolves the middle/last collapse.
+
+## Phase 2: MMLU Full Runs [DONE — LAYER REUSE N/A]
 - [x] Run all 9 configs on MMLU (full)
 - [x] Verify all 9 summary.json files in artifacts/mmlu/
 - [x] Discover: layer reuse has no effect on loglikelihood tasks
 - [x] Document finding in results.md
 
-## Phase 3: Remaining Tasks [PARTIAL]
+**Note**: All 9 configs produced identical accuracy (66.53%) because layer reuse
+only affects generative tasks. These results are valid but uninformative for
+evaluating layer reuse.
+
+## Phase 3: Remaining Tasks [BLOCKED — awaiting Phase 6]
 - [x] Run MMLU limit_10 (9 configs) - completed
 - [x] Run Minerva Math limit_10 (9 configs) - completed
 - [x] Run IFEval limit_5 (1 config) - completed
-- [ ] Run full Minerva Math (all 9 configs)
-- [ ] Run full IFEval (all 9 configs)
-- [ ] Investigate k1_first throughput anomaly (22.75 vs ~50 tok/s)
+- [ ] Run full Minerva Math (all 9 configs) — blocked on Phase 6
+- [ ] Run full IFEval (all 9 configs) — blocked on Phase 6
+- [ ] Run full GSM8K re-run (all 9 configs, corrected code) — blocked on Phase 6
+- [~] Investigate k1_first throughput anomaly (22.75 vs ~50 tok/s) — likely explained by Bug 2 (k=1 forced full-block forwards)
 
 ---
 
@@ -39,15 +50,15 @@ throughput measurements. Accuracy measurements are still valid.
 
 See [Bug Details](#bug-details) below for full descriptions and fixes.
 
-## Phase 5: Re-validation [PARTIAL]
+## Phase 5: Re-validation [DONE]
 - [x] Run all 9 configs on GSM8K `--limit 10` — Feb 15 (see Run 1 results below)
 - [x] Identify Bug 5 (cross-small-block stale cache) — wrappers disabled during full-block
   forwards prevented caching, causing stale hidden states on subsequent small-block reuse
 - [x] Fix Bug 5 attempt: `reuse_state["count"] = 0` instead of `reuse_state["enabled"] = False`
   during full-block forwards — forces wrappers to recompute & cache 32-token outputs
 - [x] Re-run all 9 configs on GSM8K `--limit 10` — Feb 16 (see Run 2 results below)
-- [ ] Investigate remaining middle/last accuracy collapse — see [Phase 6](#phase-6-investigation)
-- [ ] Submit full SLURM runs once validated
+- [x] Email update to Dr. Lin re: bugs found, old results suspect, investigating — Feb 16
+- [ ] Submit full SLURM runs once Phase 6 resolves middle/last collapse
 
 ---
 
@@ -117,13 +128,15 @@ across all subsets** for each k value:
 | 3 | 67.17% | 67.55% | 67.70% |
 
 The accuracy drop from k1→k2→k3 proves layer reuse WAS affecting accuracy (it wasn't
-no-op). But the uniformity across subsets proves **all subsets work equally well** in
-the old code. Middle and last layers are NOT inherently worse for reuse. Something
-specific to our bug-fixed code breaks them.
+no-op). However, the uniformity across subsets is now understood to be an artifact of
+Bug 1 — `original_forward()` ran as a side-effect on every reuse step, keeping the
+model's internal state (block cache, attention) coherent regardless of which layers
+returned cached values. The real question is whether middle/last layers can work
+correctly when computation is truly skipped (Bug 1 fixed).
 
 ---
 
-## Phase 6: Investigation [TODO]
+## Phase 6: Investigation [IN PROGRESS]
 
 ### Context for new sessions
 
