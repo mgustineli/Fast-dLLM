@@ -1,0 +1,43 @@
+{
+  "task": "gsm8k",
+  "config": "k3_middle",
+  "timestamp": "20260215_214640",
+  "accuracy": 0.0,
+  "throughput": {
+    "tokens_generated": 20350,
+    "total_time_s": 210.72,
+    "tokens_per_s": 96.57
+  },
+  "gpu_info": {
+    "gpu_available": true,
+    "gpu_name": "Quadro RTX 6000",
+    "gpu_total_vram_gb": 21.97,
+    "cuda_device": 0,
+    "cuda_version": "12.8",
+    "driver_version": "575.57.08"
+  },
+  "git": {
+    "commit": "6c8822fc6a7bcfaf2c3679c9d31de2b47ec28cdc",
+    "branch": "main",
+    "dirty": true
+  },
+  "environment": {
+    "python_version": "3.12.3",
+    "torch_version": "2.10.0+cu128",
+    "hostname": "atl1-1-03-007-7-0.pace.gatech.edu",
+    "slurm_job_id": "3973390"
+  },
+  "model_args": {
+    "model_path": "Efficient-Large-Model/Fast_dLLM_v2_7B",
+    "reuse_k": 3,
+    "layer_subset": "middle",
+    "use_block_cache": true,
+    "show_speed": true,
+    "experiment_name": "00_baseline"
+  },
+  "eval_params": {
+    "num_fewshot": 0,
+    "batch_size": "1",
+    "limit": 10.0
+  }
+}

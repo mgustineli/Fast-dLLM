@@ -39,45 +39,102 @@ throughput measurements. Accuracy measurements are still valid.
 
 See [Bug Details](#bug-details) below for full descriptions and fixes.
 
-## Phase 5: Re-validation
-- [ ] Re-run all 9 configs on GSM8K with `--limit 10` (post Bug 2 + Bug 4 fixes)
+## Phase 5: Re-validation [PARTIAL]
+- [x] Run all 9 configs on GSM8K with `--limit 10` (see results below)
+- [ ] Re-run `first` subset configs (k1/k2/k3) on latest code (`6c8822f`) — currently stale (ran on `6f96d95`)
+- [ ] Investigate Bug 5 (cross-small-block stale cache) — see below
 - [ ] Submit full SLURM runs once validated
 
 ---
 
-## Pre-fix Baseline (Feb 14, 2026)
+## Results: GSM8K limit_10 (Feb 15, 2026)
 
-Ran k1_first locally with `--limit 10` on GSM8K before fixing any bugs.
-This establishes a "before" baseline for throughput comparisons.
+All 9 configs ran via `sbatch/run_locally.sh --limit 10`. Results in `artifacts/gsm8k_limit_10/`.
 
-| Config | Accuracy | Tokens/s | GPU | Notes |
-|--------|----------|----------|-----|-------|
-| k1_first (limit 10) | 60.0% | 47.63 | Quadro RTX 6000 | Pre-fix, buggy code |
+**WARNING: Code version discrepancy.** Configs ran across 3 different commits:
 
-## Post-fix Results (Feb 15, 2026)
+| Group | Commit | Code State | Configs |
+|-------|--------|-----------|---------|
+| A | `6f96d95` (dirty) | Bug 1+3 fixed, Bug 2+4 **unfixed** | k1_first, k2_first, k3_first |
+| B | `6d2a9a8` | Bugs 1-4 fixed, no reuse-disable-during-full-block | k1_middle, k1_last |
+| C | `6c8822f` | All fixes (latest) | k2/k3 middle, k2/k3 last |
 
-After fixing Bug 1 and Bug 3. Bug 2 and Bug 4 were not yet fixed for these runs.
+| Config | Accuracy | Tokens/s | Tokens | Time (s) | Commit | Notes |
+|--------|----------|----------|--------|----------|--------|-------|
+| k1_first | 60% | 47.52 | 3,540 | 74.5 | `6f96d95` | No reuse (k=1) |
+| k1_middle | 70% | 43.37 | 3,540 | 81.6 | `6d2a9a8` | No reuse (k=1) |
+| k1_last | 70% | 42.94 | 3,540 | 82.4 | `6d2a9a8` | No reuse (k=1) |
+| k2_first | 70% | 36.74 | 3,092 | 84.2 | `6f96d95` | OK accuracy, slow |
+| k3_first | 60% | 37.87 | 3,508 | 92.6 | `6f96d95` | OK accuracy, slow |
+| k2_middle | **10%** | 82.81 | 18,493 | 223.3 | `6c8822f` | **COLLAPSED** |
+| k2_last | **10%** | 83.73 | 18,717 | 223.6 | `6c8822f` | **COLLAPSED** |
+| k3_middle | **0%** | 96.57 | 20,350 | 210.7 | `6c8822f` | **COLLAPSED** |
+| k3_last | **0%** | 88.05 | 20,350 | 231.1 | `6c8822f` | **COLLAPSED** |
 
-| Config | Accuracy | Tokens/s | GPU | Notes |
-|--------|----------|----------|-----|-------|
-| k1_first (limit 10) | 60.0% | 47.52 | Quadro RTX 6000 | Control - no reuse (expected same) |
-| k2_first (limit 10) | 70.0% | 36.74 | Quadro RTX 6000 | Slower than k1 |
-| k3_first (limit 10) | 60.0% | 37.87 | Quadro RTX 6000 | Slower than k1 |
+### Observations
 
-**Observation: Layer reuse does not improve throughput (and may hurt it).**
+1. **k1 configs (all subsets): 60-70% accuracy.** Expected — k=1 means `_patch_layers_helper`
+   returns early without patching, so subset is irrelevant. Throughput variance (~43-48 tok/s)
+   is run-to-run noise.
 
-k2 and k3 are ~20-23% *slower* than k1, despite skipping layer computation on
-reuse steps. Likely causes:
+2. **k2/k3 with `first` subset: 60-70% accuracy, normal token counts (~3K).**
+   Layer reuse works without destroying quality. But these ran on **old code** (Group A)
+   where Bug 2 was unfixed — the old `should_recompute` forced full-block forwards every
+   k-th step, so layer wrappers cached 32-token outputs and reused sliced versions.
+   **Must re-run on latest code to confirm.**
 
-1. **Python monkey-patching overhead**: The wrapper closure runs on every forward
-   call for 12 layers. At batch_size=1, the per-call CPU overhead (dict lookups,
-   condition checks, tensor slicing) outweighs the GPU compute saved by skipping
-   a single layer forward.
-2. **Bug 2 still present**: The `should_recompute` flag in `batch_sample()` forces
-   full-block forwards on recompute steps (every k-th step), disrupting the block
-   cache optimization that the original code relies on for speed.
-3. **Batch size 1**: GPU utilization is already low; skipping layers saves minimal
-   wall-clock time since the GPU is not saturated.
+3. **k2/k3 with `middle`/`last` subset: 0-10% accuracy, ~18-20K tokens.**
+   Model fails to converge — diffusion iterations don't unmask tokens properly, so
+   generation runs to max_new_tokens producing gibberish. These ran on the **latest code**
+   (Group C) with all bug fixes.
+
+4. **Throughput is misleading for collapsed configs.** The high tok/s (83-97) reflects
+   many wasted iterations, not useful generation speed.
+
+### Investigation: Middle/Last Layer Collapse
+
+Two factors contribute to the collapse:
+
+**Factor 1: Cross-small-block stale cache (Bug 5 — code issue)**
+
+When a full-block forward runs (`should_recompute=True`), `reuse_state["enabled"]=False`
+prevents layer wrappers from updating their cache. When the next small block starts and
+a layer wrapper hits a reuse step (`step % k != 0`), it returns the **stale cache** from
+the previous small block's positions (e.g., returning hidden states from positions 0-8
+when processing positions 8-16). The shapes match (`[B, 8, D]` == `[B, 8, D]`), so no
+fallback is triggered — the wrapper silently returns wrong-position hidden states.
+
+This affects ALL subsets, but the impact differs by layer location.
+
+**Factor 2: Layer sensitivity (architectural)**
+
+- **First (layers 1-12):** Stale hidden states are corrected by layers 13-27 via
+  self-attention. Early layers capture lower-level features that are more position-tolerant.
+- **Middle (layers 8-19) / Last (layers 16-27):** Fewer (or no) downstream layers to
+  correct stale representations. These layers are output-sensitive — stale hidden states
+  produce corrupted logits that compound across diffusion iterations.
+
+**Note on Bug 2 interaction:** In Group A (Bug 2 unfixed), the old `should_recompute`
+forced full-block forwards every k-th step WITH layer wrappers enabled. This meant
+wrappers cached 32-token outputs, and subsequent small-block reuses sliced them correctly
+via `replace_position`. In Group C (Bug 2 fixed), full-block forwards disable wrappers
+entirely, so caching only happens during 8-token small-block forwards — making the
+cross-small-block stale cache issue (Bug 5) more impactful.
+
+### Next Steps
+
+1. **Fix Bug 5**: Clear layer caches after full-block forwards to prevent stale reuse:
+   ```python
+   if should_recompute:
+       reuse_state["enabled"] = False
+       for lc in reuse_state.get("caches", {}).values():
+           lc.pop("last_output", None)
+       output = self.forward(...)
+       reuse_state["enabled"] = True
+   ```
+2. **Re-run all 9 configs on the same commit** with Bug 5 fixed
+3. **If middle/last still collapse after Bug 5 fix**, the conclusion is that layer reuse
+   is only viable for early layers (an inherent architectural limitation)
 
 ---
 
