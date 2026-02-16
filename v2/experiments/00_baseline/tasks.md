@@ -134,8 +134,9 @@ should_recompute = (
 ```
 
 **Fix**: Restore the original block cache condition (remove conditions 2 and 3).
-Block cache and layer reuse are orthogonal — layer reuse is handled independently
-by the monkey-patched wrappers via `reuse_state["count"]`.
+Layer reuse is handled by the monkey-patched wrappers via `reuse_state["count"]`.
+Note: block cache and layer reuse are NOT fully independent — see
+[Design Constraint](#design-constraint-block-cache-vs-layer-reuse) below.
 
 ### Bug 3 (MODERATE) [FIXED - Feb 15]: "first" subset patches 11 layers, not 12
 
@@ -162,6 +163,38 @@ closure-local dicts inside `create_wrapper()`, never registered in `reuse_state`
 
 **Fix**: Register each `layer_cache` dict into `reuse_state["caches"]` during
 `create_wrapper()`, so the existing trim code works.
+
+---
+
+## Design Constraint: Block Cache vs Layer Reuse
+
+Layer reuse and block cache are **not fully independent**. Full-block forwards
+(32 tokens) BUILD `block_past_key_values` — each layer's attention must run to
+populate its block cache entry via `block_past_key_values.update()`. If a patched
+layer is skipped (returns cached hidden states), its block cache entry is never
+created, causing a `NoneType` crash when the subsequent small-block forward
+tries to read it.
+
+**Constraint**: Layer reuse must be disabled during full-block forwards.
+
+This means layer reuse only activates on the **small-block fast path** (8 tokens),
+which reads from an already-built block cache. The expensive full-block forwards
+always run all layers at full cost.
+
+```
+should_recompute (original block cache logic)
+  |
+  +-- YES: full block (32 tokens) — BUILDS block_past_key_values
+  |   Layer reuse DISABLED (all layers must run to populate block cache)
+  |
+  +-- NO: small block (8 tokens) — READS block_past_key_values
+      Layer reuse ENABLED (skipped layers return cached hidden states)
+```
+
+**Implication for throughput**: The speedup opportunity from layer reuse is
+limited to small-block iterations. The full-block forward (the most expensive
+step in each denoising cycle) cannot benefit from layer skipping. This partly
+explains why k=2 and k=3 show minimal throughput improvement over k=1.
 
 ---
 
