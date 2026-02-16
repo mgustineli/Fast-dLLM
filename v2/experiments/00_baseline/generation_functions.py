@@ -286,7 +286,12 @@ class Fast_dLLM_QwenForCausalLM:
                             )
 
                             if should_recompute:
-                                # Full Compute
+                                # Full Compute — BUILDS block_past_key_values.
+                                # Layer reuse must be disabled here: each layer's
+                                # attention must run to populate its block cache
+                                # entry. Skipping a layer would leave a None entry,
+                                # crashing the small-block path later.
+                                reuse_state["enabled"] = False
                                 output = self.forward(
                                     input_ids=x_t[:, -block_size:],
                                     use_cache=True,
@@ -295,6 +300,7 @@ class Fast_dLLM_QwenForCausalLM:
                                     use_block_cache=True,
                                     block_size=block_size,
                                 )
+                                reuse_state["enabled"] = True
                                 logits, block_past_key_values = (
                                     output.logits,
                                     output.block_past_key_values,
@@ -304,8 +310,9 @@ class Fast_dLLM_QwenForCausalLM:
                                 )
                                 logits = logits[:, start:end]
                             else:
-                                # Reuse Compute (Fast Path)
-                                # This path relies on block_past_key_values AND patched layers (via controller)
+                                # Reuse Compute (Fast Path) — READS block_past_key_values.
+                                # Layer reuse is safe here: skipped layers return
+                                # cached hidden states; block cache is only read, not built.
                                 logits = self.forward(
                                     input_ids=x_t[:, start:end],
                                     use_cache=True,

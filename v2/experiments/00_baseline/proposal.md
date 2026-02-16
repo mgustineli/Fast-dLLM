@@ -180,28 +180,25 @@ wrappers with the generation process:
 - **Teardown** (line 460): Unpatch layers after generation completes.
 
 The block cache decision (`should_recompute`, line 280) preserves the original
-logic exactly — block cache and layer reuse are independent and orthogonal:
+logic exactly. However, block cache and layer reuse are **not fully independent**:
+full-block forwards that BUILD `block_past_key_values` require every layer's
+attention to run (to populate its block cache entry). Layer reuse is therefore
+disabled during full-block forwards and only active during small-block forwards:
 
 ```
-                    +----------------------------------+
-                    |     should_recompute (line 280)   |
-                    |  Block cache: what INPUT shape?   |
-                    +-----------------+----------------+
-                    | YES: 32 tokens  | NO: 8 tokens   |
-                    +--------+--------+-------+--------+
-                             |                |
-                    +--------v----------------v--------+
-                    |        self.forward(...)          |
-                    |  Runs through all 28 layers       |
-                    |                                   |
-                    |  For 12 PATCHED layers:           |
-                    |    reuse_state["count"] % k == 0? |
-                    |    +-- YES: compute + cache output|
-                    |    +-- NO:  return cached output  |
-                    |                                   |
-                    |  For 16 UNPATCHED layers:         |
-                    |    always compute normally        |
-                    +-----------------------------------+
+should_recompute (line 280) — original block cache logic
+  |
+  +-- YES: full block (32 tokens) — BUILDS block_past_key_values
+  |   Layer reuse DISABLED (all layers must compute to populate block cache)
+  |
+  +-- NO: small block (8 tokens) — READS block_past_key_values
+      Layer reuse ENABLED:
+        For 12 PATCHED layers:
+          reuse_state["count"] % k == 0?
+          +-- YES: compute + cache output
+          +-- NO:  return cached output
+        For 16 UNPATCHED layers:
+          always compute normally
 ```
 
 #### 3. Hardened: Batch Trim Logic (lines 380-450)
